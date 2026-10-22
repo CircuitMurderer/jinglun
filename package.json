@@ -1,0 +1,23 @@
+{
+  "name": "jinglun",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": { "node": ">=22.12" },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite --config frontend/vite.config.ts",
+    "dev:server": "node scripts/rust.mjs run -p jinglun-server",
+    "build": "npm run check && vite build --config frontend/vite.config.ts",
+    "build:server": "node scripts/rust.mjs build --release -p jinglun-server",
+    "check": "tsc --noEmit -p frontend/tsconfig.json",
+    "test": "node scripts/rust.mjs test --workspace",
+    "fmt": "node scripts/rust.mjs fmt --all",
+    "preview": "vite preview --config frontend/vite.config.ts --host 127.0.0.1"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.0",
+    "vite": "^7.3.0",
+    "@types/node": "^22.18.0"
+  }
+}

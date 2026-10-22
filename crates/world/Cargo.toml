@@ -1,0 +1,13 @@
+[package]
+name = "jinglun-world"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+noise = "0.9"
+voronoice = "0.2"
+
+[dev-dependencies]
+serde_json.workspace = true
