@@ -1,5 +1,6 @@
 //! Natural geography is sampled independently of the governance tessellation.
 use crate::hydrology::{self, Drainage, Lake, River, WaterBudget};
+use crate::seasonal::{self, ClimateProfile};
 use crate::{Cell, HEIGHT, Point, Resource, Terrain, WIDTH, fbm, index};
 use noise::{NoiseFn, Simplex};
 use serde::Serialize;
@@ -51,6 +52,7 @@ struct Sample {
     elevation: f64,
     rain: f64,
     temperature: f64,
+    climate: ClimateProfile,
     pet: f64,
     flatness: u8,
     soil: u8,
@@ -237,11 +239,60 @@ impl Field {
                 31.0 - latitude * 0.6 - h.max(0.0) * 0.0058
             })
             .collect();
-        let pet: Vec<f64> = temperature
-            .iter()
-            .map(|t| 300.0 + (t + 5.0).max(0.0) * 36.0)
+        let mut ocean_distance = vec![usize::MAX; elevation.len()];
+        let mut queue = VecDeque::new();
+        for (id, &h) in elevation.iter().enumerate() {
+            if h <= 0.0 {
+                ocean_distance[id] = 0;
+                queue.push_back(id);
+            }
+        }
+        while let Some(id) = queue.pop_front() {
+            for next in cardinal(id) {
+                if ocean_distance[next] == usize::MAX {
+                    ocean_distance[next] = ocean_distance[id] + 1;
+                    queue.push_back(next);
+                }
+            }
+        }
+        let flatness: Vec<u8> = (0..raw.len())
+            .map(|id| local_flatness(&elevation, id, COLS, ROWS))
             .collect();
-        let drainage = hydrology::drain(&elevation, &rain, &pet, COLS, ROWS);
+        let profiles: Vec<ClimateProfile> = (0..raw.len())
+            .map(|id| {
+                let latitude = (0.5 - ((id / COLS) as f64 + 0.5) / ROWS as f64) * 150.0;
+                let continentality = 1.0 - (-(ocean_distance[id] as f64) / 18.0).exp();
+                // Root-zone capacity is a bounded terrain proxy, not measured soil depth.
+                let capacity = 80.0 + flatness[id] as f64 * 1.2;
+                let mut profile = seasonal::normals(
+                    temperature[id],
+                    rain[id],
+                    latitude,
+                    continentality,
+                    capacity,
+                );
+                if elevation[id] <= 0.0 {
+                    // Marine samples provide atmospheric normals only. Do not
+                    // invent terrestrial soil, crops or runoff over the ocean.
+                    for month in &mut profile.months {
+                        month.snowfall_mm = 0.0;
+                        month.snowmelt_mm = 0.0;
+                        month.evapotranspiration_mm = 0.0;
+                        month.runoff_mm = 0.0;
+                        month.recharge_mm = 0.0;
+                        month.soil_water_mm = 0.0;
+                    }
+                    profile.growing_months = 0.0;
+                    profile.rainfed_months = 0.0;
+                    profile.snow_storage_change_mm = 0.0;
+                    profile.soil_storage_change_mm = 0.0;
+                }
+                profile
+            })
+            .collect();
+        let pet: Vec<f64> = profiles.iter().map(ClimateProfile::pet).collect();
+        let water: Vec<_> = profiles.iter().map(ClimateProfile::water).collect();
+        let drainage = hydrology::drain(&elevation, &water, &pet, COLS, ROWS);
         let mut samples = Vec::with_capacity(raw.len());
         for id in 0..raw.len() {
             let h = elevation[id];
@@ -263,9 +314,9 @@ impl Field {
             } else {
                 "humid"
             };
-            let flatness = local_flatness(&elevation, id, COLS, ROWS);
+            let flatness = flatness[id];
             let form = landform(h, flatness);
-            let vegetation = if temp < 0.0 {
+            let vegetation = if profiles[id].warmest() < 8.0 {
                 "alpine"
             } else if aridity > 0.95 {
                 "forest"
@@ -288,13 +339,10 @@ impl Field {
                 parent + organic - erosion + river_nearness * flatness as f64 / 100.0 * 0.16
                     - (rain[id] / 3500.0).clamp(0.0, 1.0) * 0.08,
             );
-            let heat =
-                ((temp + 4.0) / 15.0).clamp(0.0, 1.0) * ((42.0 - temp) / 15.0).clamp(0.0, 1.0);
             let slope_factor = (flatness as f64 / 75.0).clamp(0.0, 1.0);
-            let water = (aridity / 0.85).clamp(0.0, 1.0);
-            let agriculture = index(soil as f64 / 100.0 * heat * slope_factor * water);
-            let irrigation =
-                index(river_nearness * (1.0 - water) * heat * slope_factor * soil as f64 / 100.0);
+            let (rainfed, irrigable) = profiles[id].crop_opportunity();
+            let agriculture = index(soil as f64 / 100.0 * slope_factor * rainfed);
+            let irrigation = index(river_nearness * irrigable * slope_factor * soil as f64 / 100.0);
             let terrain = if h <= 0.0 {
                 if h > -650.0 {
                     Terrain::ShallowSea
@@ -303,8 +351,10 @@ impl Field {
                 }
             } else if drainage.lake_mask[id] {
                 Terrain::Lake
-            } else if temp < 0.0 {
+            } else if profiles[id].warmest() <= 0.0 {
                 Terrain::Snow
+            } else if profiles[id].warmest() < 8.0 {
+                Terrain::Tundra
             } else if aridity < 0.2 {
                 Terrain::Desert
             } else if form == "mountains" {
@@ -324,6 +374,7 @@ impl Field {
                 elevation: h,
                 rain: rain[id],
                 temperature: temp,
+                climate: profiles[id].clone(),
                 pet: pet[id],
                 flatness,
                 soil,
@@ -331,7 +382,7 @@ impl Field {
                 irrigation,
                 arable: h > 0.0
                     && !drainage.lake_mask[id]
-                    && temp > 2.0
+                    && profiles[id].growing_months >= 3.0
                     && flatness > 35
                     && soil >= 30
                     && (agriculture >= 25 || irrigation >= 15),
@@ -370,6 +421,7 @@ impl Field {
             river: usize,
             aridity: f64,
             shadow: f64,
+            climate: ClimateProfile,
             terrain: BTreeMap<usize, usize>,
             form: BTreeMap<&'static str, usize>,
             thermal: BTreeMap<&'static str, usize>,
@@ -417,6 +469,7 @@ impl Field {
             a.coastal |= s.coastal;
             a.rain += s.rain;
             a.temp += s.temperature;
+            a.climate.add(&s.climate);
             a.flatness += s.flatness as f64;
             if !self.drainage.lake_mask[id] {
                 a.soil += s.soil as f64;
@@ -447,6 +500,7 @@ impl Field {
                     a.land = 1;
                     a.rain = s.rain;
                     a.temp = s.temperature;
+                    a.climate = s.climate.clone();
                     a.flatness = s.flatness as f64;
                     a.soil = s.soil as f64;
                     a.agriculture = s.agriculture as f64;
@@ -484,6 +538,7 @@ impl Field {
                 let s = &self.samples[y.min(ROWS - 1) * COLS + x.min(COLS - 1)];
                 cell.temperature_c = (s.temperature * 10.0).round() / 10.0;
                 cell.rainfall_mm = s.rain.round() as u32;
+                cell.climate = s.climate.clone();
                 continue;
             }
             let count = a.land as f64;
@@ -505,6 +560,8 @@ impl Field {
             cell.vegetation = mode(&a.vegetation);
             cell.rainfall_mm = (a.rain / count).round() as u32;
             cell.temperature_c = (a.temp / count * 10.0).round() / 10.0;
+            cell.climate = a.climate.clone();
+            cell.climate.average(count);
             cell.flatness = (a.flatness / count).round() as u8;
             cell.soil_quality = (a.soil / count).round() as u8;
             cell.agricultural_suitability = (a.agriculture / count).round() as u8;
@@ -530,8 +587,21 @@ impl Field {
             if cell.landform == "plateau" {
                 cell.causes.push("flat_plateau");
             }
-            if cell.temperature_c < 6.0 {
+            if cell.climate.growing_months < 4.0 {
                 cell.causes.push("cold_limit");
+            }
+            if cell
+                .climate
+                .months
+                .iter()
+                .map(|m| m.snowmelt_mm)
+                .sum::<f64>()
+                > 50.0
+            {
+                cell.causes.push("snowmelt_supply");
+            }
+            if cell.climate.growing_months - cell.climate.rainfed_months >= 2.0 {
+                cell.causes.push("seasonal_drought");
             }
             if cell.flatness < 30 {
                 cell.causes.push("steep_limit");
@@ -697,6 +767,8 @@ impl Field {
                 s.elevation.round() as i64,
                 s.rain.round() as i64,
                 (s.temperature * 10.0).round() as i64,
+                (s.climate.growing_months * 10.0).round() as i64,
+                s.climate.water().runoff.round() as i64,
             ] {
                 for b in v.to_le_bytes() {
                     fingerprint = (fingerprint ^ u64::from(b)).wrapping_mul(0x100000001b3);
@@ -724,7 +796,7 @@ impl Field {
         }
         let land: Vec<_> = self.samples.iter().filter(|s| s.elevation > 0.0).collect();
         Environment {
-            terrain_palette: (0..=10).map(terrain_from_id).collect(),
+            terrain_palette: (0..=11).map(terrain_from_id).collect(),
             columns: COLS,
             rows: ROWS,
             fingerprint: format!("{fingerprint:016x}"),
@@ -759,6 +831,7 @@ fn terrain_id(t: Terrain) -> usize {
         Terrain::Snow => 8,
         Terrain::Plateau => 9,
         Terrain::Lake => 10,
+        Terrain::Tundra => 11,
     }
 }
 fn terrain_from_id(id: usize) -> Terrain {
@@ -774,6 +847,7 @@ fn terrain_from_id(id: usize) -> Terrain {
         Terrain::Snow,
         Terrain::Plateau,
         Terrain::Lake,
+        Terrain::Tundra,
     ][id]
 }
 

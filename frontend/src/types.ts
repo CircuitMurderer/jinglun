@@ -6,7 +6,17 @@ export interface MapConfig {
   land_ratio: number;
 }
 export interface Point { x: number; y: number }
-export type Terrain = 'deep_ocean' | 'shallow_sea' | 'plains' | 'grassland' | 'forest' | 'desert' | 'hills' | 'mountains' | 'snow' | 'plateau' | 'lake';
+export type Terrain = 'deep_ocean' | 'shallow_sea' | 'plains' | 'grassland' | 'forest' | 'desert' | 'hills' | 'mountains' | 'snow' | 'plateau' | 'lake' | 'tundra';
+export interface MonthClimate {
+  temperature_c: number; precipitation_mm: number; snowfall_mm: number; snowmelt_mm: number;
+  potential_evapotranspiration_mm: number; evapotranspiration_mm: number;
+  runoff_mm: number; recharge_mm: number; soil_water_mm: number;
+}
+export interface ClimateProfile {
+  months: MonthClimate[];
+  continentality: number; growing_months: number; rainfed_months: number; cold_months: number;
+  snow_storage_change_mm: number; soil_storage_change_mm: number;
+}
 export type ResourceKind = 'grain' | 'livestock' | 'fiber' | 'timber' | 'stone' | 'coal' | 'iron' | 'oil' | 'rare_earth' | 'freshwater';
 export interface Resource { kind: ResourceKind; potential: number }
 export interface Cell {
@@ -22,6 +32,7 @@ export interface Cell {
   elevation_m: number;
   rainfall_mm: number;
   temperature_c: number;
+  climate: ClimateProfile;
   land_fraction: number;
   lake_fraction: number;
   landform: 'ocean' | 'lowland' | 'plateau' | 'hills' | 'mountains';
@@ -34,7 +45,7 @@ export interface Cell {
   irrigation_potential: number;
   river_access: number;
   aridity_index: number;
-  causes: Array<'coastal_moisture' | 'rain_shadow' | 'water_deficit' | 'river_water' | 'irrigation_opportunity' | 'flat_plateau' | 'cold_limit' | 'steep_limit' | 'regional_climate'>;
+  causes: Array<'coastal_moisture' | 'rain_shadow' | 'water_deficit' | 'river_water' | 'irrigation_opportunity' | 'flat_plateau' | 'cold_limit' | 'steep_limit' | 'regional_climate' | 'snowmelt_supply' | 'seasonal_drought'>;
   flatness: number;
   resources: Resource[];
 }
@@ -60,11 +71,11 @@ export interface WorldMap {
     latitude_range: [number, number];
     land_ratio: number; landmasses: number;
     terrain_palette: Terrain[];
-    layers: Array<{kind: Exclude<Layer, 'resources'>; bands: Array<{value: number; path: string}>}>;
+    layers: Array<{kind: Exclude<Layer, 'resources' | 'temperature'>; bands: Array<{value: number; path: string}>}>;
     coast_path: string;
     rivers: Array<{id: number; points: Point[]; flow_index: number; basin_id: number; outlet: 'junction' | 'ocean' | 'lake' | 'boundary'}>;
     lakes: Array<{id: number; path: string; area_fraction: number; spill_elevation_m: number}>;
   };
 }
 export interface MapResponse { map: WorldMap; meta: { generation_ms: number } }
-export type Layer = 'terrain' | 'elevation' | 'rainfall' | 'water' | 'soil' | 'agriculture' | 'resources';
+export type Layer = 'terrain' | 'elevation' | 'temperature' | 'rainfall' | 'water' | 'soil' | 'agriculture' | 'resources';

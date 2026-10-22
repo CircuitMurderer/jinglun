@@ -6,9 +6,11 @@ use voronoice::{BoundingBox, Point as VPoint, Voronoi, VoronoiBuilder};
 
 mod environment;
 mod hydrology;
+mod seasonal;
 pub use environment::Environment;
+pub use seasonal::ClimateProfile;
 
-pub const GENERATOR_VERSION: &str = "0.2.1";
+pub const GENERATOR_VERSION: &str = "0.3.0";
 pub const WIDTH: f64 = 1600.0;
 pub const HEIGHT: f64 = 1000.0;
 
@@ -91,6 +93,7 @@ pub enum Terrain {
     Snow,
     Plateau,
     Lake,
+    Tundra,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -113,6 +116,7 @@ pub struct Cell {
     pub elevation_m: i32,
     pub rainfall_mm: u32,
     pub temperature_c: f64,
+    pub climate: ClimateProfile,
     pub land_fraction: f64,
     pub lake_fraction: f64,
     pub landform: &'static str,
@@ -290,6 +294,7 @@ pub fn generate(config: MapConfig) -> Result<WorldMap, GenerationError> {
                 elevation_m: 0,
                 rainfall_mm: 0,
                 temperature_c: 0.0,
+                climate: ClimateProfile::default(),
                 land_fraction: 0.0,
                 lake_fraction: 0.0,
                 landform: "ocean",
@@ -511,6 +516,22 @@ mod tests {
             })
             .unwrap();
             assert!(map.stats.land_cells > 0 && map.stats.sea_cells > 0);
+            let budget = &map.environment.water_budget;
+            let residual = budget.land_precipitation
+                - budget.land_evapotranspiration
+                - budget.groundwater_recharge
+                - budget.generated_runoff
+                - budget.snow_storage_change
+                - budget.soil_storage_change;
+            assert!(residual.abs() < budget.land_precipitation.max(1.0) * 1e-10);
+            assert!(
+                (budget.generated_runoff
+                    - budget.lake_evaporation
+                    - budget.ocean_outflow
+                    - budget.boundary_outflow)
+                    .abs()
+                    < budget.generated_runoff.max(1.0) * 1e-10
+            );
             for cell in &map.cells {
                 assert!(cell.temperature_c.is_finite());
                 assert!(cell.rainfall_mm <= 20000);
@@ -526,6 +547,37 @@ mod tests {
                     "dominant terrain must agree with the cell's land/sea classification"
                 );
                 assert!(cell.soil_quality <= 100 && cell.agricultural_suitability <= 100);
+                assert!(cell.climate.growing_months <= 12.0 + 1e-9);
+                assert!(cell.climate.rainfed_months <= cell.climate.growing_months + 1e-9);
+                let water = cell.climate.water();
+                assert!((water.precipitation - cell.rainfall_mm as f64).abs() <= 0.51);
+                assert!(
+                    (cell
+                        .climate
+                        .months
+                        .iter()
+                        .map(|m| m.temperature_c)
+                        .sum::<f64>()
+                        / 12.0
+                        - cell.temperature_c)
+                        .abs()
+                        <= 0.051
+                );
+                if cell.land_fraction == 0.0 {
+                    assert_eq!(water.runoff, 0.0);
+                    assert_eq!(cell.climate.growing_months, 0.0);
+                    continue;
+                }
+                assert!(
+                    (water.precipitation
+                        - water.evapotranspiration
+                        - water.recharge
+                        - water.runoff
+                        - water.snow_storage_change
+                        - water.soil_storage_change)
+                        .abs()
+                        < 1e-6
+                );
             }
             serde_json::to_string(&map).unwrap();
         }

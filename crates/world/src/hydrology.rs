@@ -1,6 +1,7 @@
 //! D8 drainage on a fixed raster. Priority-flood supplies an acyclic hydraulic
 //! surface; original terrain is retained, including the depressions.
 use crate::Point;
+use crate::seasonal::WaterInput;
 use serde::Serialize;
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, VecDeque};
@@ -32,6 +33,8 @@ pub struct WaterBudget {
     pub lake_evaporation: f64,
     pub ocean_outflow: f64,
     pub boundary_outflow: f64,
+    pub snow_storage_change: f64,
+    pub soil_storage_change: f64,
 }
 
 pub(crate) struct Drainage {
@@ -62,7 +65,7 @@ pub(crate) fn neighbors(id: usize, cols: usize, rows: usize) -> impl Iterator<It
 
 pub(crate) fn drain(
     elevation: &[f64],
-    rain: &[f64],
+    water: &[WaterInput],
     pet: &[f64],
     cols: usize,
     rows: usize,
@@ -131,18 +134,20 @@ pub(crate) fn drain(
         lake_evaporation: 0.0,
         ocean_outflow: 0.0,
         boundary_outflow: 0.0,
+        snow_storage_change: 0.0,
+        soil_storage_change: 0.0,
     };
     let mut local = vec![0.0; n];
     for id in 0..n {
         if elevation[id] <= 0.0 {
             continue;
         }
-        let evap = rain[id].min(pet[id] * 0.72);
-        let recharge = (rain[id] - evap) * 0.25;
-        local[id] = rain[id] - evap - recharge;
-        budget.land_precipitation += rain[id];
-        budget.land_evapotranspiration += evap;
-        budget.groundwater_recharge += recharge;
+        local[id] = water[id].runoff;
+        budget.land_precipitation += water[id].precipitation;
+        budget.land_evapotranspiration += water[id].evapotranspiration;
+        budget.groundwater_recharge += water[id].recharge;
+        budget.snow_storage_change += water[id].snow_storage_change;
+        budget.soil_storage_change += water[id].soil_storage_change;
         budget.generated_runoff += local[id];
     }
     let mut flow = local.clone();
@@ -198,7 +203,9 @@ pub(crate) fn drain(
     flow.clone_from(&local);
     for &id in order.iter().rev() {
         if lake_mask[id] {
-            let loss = flow[id].min(pet[id] * 0.28);
+            // Only the remaining evaporative demand is charged to upstream
+            // water: local land ET has already been accounted for this sample.
+            let loss = flow[id].min((pet[id] - water[id].evapotranspiration).max(0.0));
             flow[id] -= loss;
             budget.lake_evaporation += loss;
         }
@@ -305,6 +312,24 @@ impl Drainage {
 mod tests {
     use super::*;
 
+    // Routing tests supply an explicit balanced local water source, independent
+    // of the climate model (which has its own snow/soil conservation tests).
+    fn inputs(rain: &[f64], pet: &[f64]) -> Vec<WaterInput> {
+        rain.iter()
+            .zip(pet)
+            .map(|(&p, &demand)| {
+                let evapotranspiration = p.min(demand * 0.72);
+                WaterInput {
+                    precipitation: p,
+                    evapotranspiration,
+                    recharge: (p - evapotranspiration) * 0.25,
+                    runoff: (p - evapotranspiration) * 0.75,
+                    ..WaterInput::default()
+                }
+            })
+            .collect()
+    }
+
     #[test]
     fn drainage_is_acyclic_water_balances_and_arid_downstream_receives_water() {
         let (cols, rows) = (16, 12);
@@ -320,7 +345,8 @@ mod tests {
         let rain: Vec<f64> = (0..cols * rows)
             .map(|id| if id % cols < 6 { 1800.0 } else { 20.0 })
             .collect();
-        let d = drain(&elevation, &rain, &vec![700.0; cols * rows], cols, rows);
+        let pet = vec![700.0; cols * rows];
+        let d = drain(&elevation, &inputs(&rain, &pet), &pet, cols, rows);
         for start in 0..elevation.len() {
             let mut id = start;
             let mut steps = 0;
@@ -364,7 +390,7 @@ mod tests {
         }
         let wet = drain(
             &elevation,
-            &vec![6000.0; cols * rows],
+            &inputs(&vec![6000.0; cols * rows], &vec![600.0; cols * rows]),
             &vec![600.0; cols * rows],
             cols,
             rows,
@@ -372,7 +398,7 @@ mod tests {
         assert!(!wet.lake_groups.is_empty());
         let dry = drain(
             &elevation,
-            &vec![0.0; cols * rows],
+            &inputs(&vec![0.0; cols * rows], &vec![1400.0; cols * rows]),
             &vec![1400.0; cols * rows],
             cols,
             rows,

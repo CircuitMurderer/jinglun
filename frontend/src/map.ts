@@ -1,188 +1,423 @@
 import type { Cell, Layer, Point, ResourceKind, Terrain, WorldMap } from './types';
 import { t } from './i18n';
+import { MapCamera, screenTransform } from './map-camera';
+import { RiverOverlay } from './river-overlay';
+import { displayRivers } from './river-display';
 
+/** Night-atlas palette: dark seas so land, rivers and selections glow. */
 export const terrainColors: Record<Terrain, string> = {
-  deep_ocean: '#c2d3d8', shallow_sea: '#d2e2df', plains: '#c6c799', grassland: '#a7bb83',
-  forest: '#749b77', desert: '#dfc998', hills: '#afa986', mountains: '#96988c', snow: '#e9e9dc',
-  plateau: '#b4b08e', lake: '#88b6c3',
+  deep_ocean: '#0a1c2e', shallow_sea: '#123349', plains: '#9aa35f', grassland: '#6e9a52',
+  forest: '#3d7550', desert: '#cfae6c', hills: '#a08c62', mountains: '#7e7c79', snow: '#e4ebef',
+  plateau: '#ad9568', lake: '#2b8db5', tundra: '#8ea69c',
 };
+
+type Ramp = ReadonlyArray<readonly [number, string]>;
+export const ramps = {
+  elevationSea: [[0, '#050f1c'], [1, '#1d4c69']],
+  elevationLand: [[0, '#2f6b4f'], [0.3, '#8fa35a'], [0.55, '#c2a46a'], [0.8, '#9c8672'], [1, '#f4f1ea']],
+  temperature: [[0, '#2b4fd6'], [0.36, '#6ec6e8'], [0.5, '#efe9cf'], [0.7, '#f6b44f'], [1, '#d8343f']],
+  rainfall: [[0, '#5b4423'], [0.35, '#a89048'], [0.65, '#3aa58a'], [1, '#39b6f0']],
+  water: [[0, '#7a3f1d'], [0.4, '#c9a35f'], [0.7, '#3ba39a'], [1, '#2f86e0']],
+  soil: [[0, '#2d2620'], [0.5, '#8d6a42'], [1, '#f0c178']],
+  agriculture: [[0, '#26302a'], [0.5, '#4f8f3c'], [1, '#d4f57c']],
+  resources: [[0, '#1c2236'], [0.35, '#5b3fc4'], [0.7, '#e0559f'], [1, '#ffd27a']],
+} satisfies Record<string, Ramp>;
+
+const rgbCache = new Map<string, number[]>();
+function rgb(hex: string): number[] {
+  let value = rgbCache.get(hex);
+  if (!value) { value = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)); rgbCache.set(hex, value); }
+  return value;
+}
+export function sample(ramp: Ramp, value: number): string {
+  const v = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+  let i = 1;
+  while (i < ramp.length - 1 && v > ramp[i][0]) ++i;
+  const [p0, c0] = ramp[i - 1];
+  const [p1, c1] = ramp[i];
+  const r = p1 === p0 ? 0 : (v - p0) / (p1 - p0);
+  const a = rgb(c0), b = rgb(c1);
+  return `rgb(${a.map((x, k) => Math.round(x + (b[k] - x) * r)).join(',')})`;
+}
+function css(ramp: Ramp, from = 0, to = 1): string {
+  return ramp.map(([p, c]) => `${c} ${((from + p * (to - from)) * 100).toFixed(1)}%`).join(',');
+}
+/** CSS gradient that matches the fill function, for legends. */
+export function legendGradient(layer: Exclude<Layer, 'terrain'>): string {
+  if (layer === 'elevation') return `linear-gradient(90deg,${css(ramps.elevationSea, 0, 0.5)},${css(ramps.elevationLand, 0.5, 1)})`;
+  return `linear-gradient(90deg,${css(ramps[layer])})`;
+}
+
+export function cellFill(cell: Cell, layer: Layer, resource: ResourceKind, month?: number): string {
+  if (layer === 'terrain') return terrainColors[cell.terrain];
+  if (layer === 'elevation') {
+    if (!cell.is_land) return sample(ramps.elevationSea, (cell.elevation_m + 4040) / 4040);
+    return sample(ramps.elevationLand, cell.elevation_m / 3600);
+  }
+  if (!cell.is_land) return terrainColors[cell.terrain];
+  if (cell.terrain === 'lake') return terrainColors.lake;
+  if (layer === 'temperature') {
+    const temperature = month === undefined ? cell.temperature_c : cell.climate.months[month].temperature_c;
+    return sample(ramps.temperature, (temperature + 30) / 70);
+  }
+  if (layer === 'rainfall') return sample(ramps.rainfall, month === undefined
+    ? cell.rainfall_mm / 2400 : cell.climate.months[month].precipitation_mm / 300);
+  if (layer === 'water') return sample(ramps.water, cell.aridity_index / 1.5);
+  if (layer === 'soil') return sample(ramps.soil, cell.soil_quality / 100);
+  if (layer === 'agriculture') return sample(ramps.agriculture, cell.agricultural_suitability / 100);
+  return sample(ramps.resources, (cell.resources.find((r) => r.kind === resource)?.potential ?? 0) / 70);
+}
+
+/** Latitude of a world y coordinate (north at the top). */
+export function latitudeAt(world: WorldMap, y: number): number {
+  const [south, north] = world.environment.latitude_range;
+  return north - (y / world.height) * (north - south);
+}
+
 const NS = 'http://www.w3.org/2000/svg';
 function svg<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string> = {}): SVGElementTagNameMap[K] {
   const element = document.createElementNS(NS, tag);
   for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, value);
   return element;
 }
-function interpolate(a: string, b: string, value: number): string {
-  const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
-  const aa = rgb(a), bb = rgb(b);
-  const ratio = Math.max(0, Math.min(1, value));
-  return `rgb(${aa.map((v, i) => Math.round(v + (bb[i] - v) * ratio)).join(',')})`;
-}
-function fill(cell: Cell, layer: Layer, resource: ResourceKind): string {
-  if (layer === 'terrain') return terrainColors[cell.terrain];
-  if (layer === 'elevation') {
-    if (!cell.is_land) return interpolate('#6d929f', '#d9e7e2', (cell.elevation_m + 4040) / 4040);
-    if (cell.elevation_m < 1100) return interpolate('#b9cd9e', '#c5b78d', cell.elevation_m / 1100);
-    return interpolate('#b3a180', '#f3f0e5', (cell.elevation_m - 1100) / 2500);
-  }
-  if (!cell.is_land) return terrainColors[cell.terrain];
-  if (cell.terrain === 'lake') return terrainColors.lake;
-  if (layer === 'rainfall') return interpolate('#e4d7b6', '#367d80', cell.rainfall_mm / 2400);
-  if (layer === 'water') return interpolate('#dfc998', '#548d9e', cell.aridity_index / 1.5);
-  if (layer === 'soil') return interpolate('#e8dcc7', '#926b46', cell.soil_quality / 100);
-  if (layer === 'agriculture') return interpolate('#e9dfc4', '#50865b', cell.agricultural_suitability / 100);
-  return interpolate('#e8e5d6', '#9f6544', (cell.resources.find((r) => r.kind === resource)?.potential ?? 0) / 70);
-}
 function points(polygon: Point[]): string { return polygon.map((p) => `${p.x},${p.y}`).join(' '); }
+function hash(n: number): number { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+const ease = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2);
 
 export class MapView {
   readonly element: SVGSVGElement;
+  readonly camera = new MapCamera();
   private world?: WorldMap;
+  private surface = document.createElement('div');
+  private gpuHost = document.createElement('div');
+  private labels = document.createElement('div');
+  private foreground = svg('svg', { viewBox: '0 0 1600 1000', 'aria-hidden': 'true' });
+  private foregroundScene = svg('g');
+  private overlay: RiverOverlay;
+  private observer: ResizeObserver;
+  private events = new AbortController();
+  private unsubscribe: () => void;
+  private ratioQuery?: MediaQueryList;
+  private waterVisible = false;
+  private gpuActive = false;
+  private month?: number;
+  private layer: Layer = 'terrain';
+  private resource: ResourceKind = 'iron';
   private scene = svg('g');
-  private polygons = svg('g');
+  private graticule = svg('g', { 'pointer-events': 'none', class: 'graticule' });
+  private polygons = svg('g', { class: 'cells' });
   private borders = svg('g');
-  private symbols = svg('g', { 'pointer-events': 'none' });
-  private coastline = svg('g', { 'pointer-events': 'none' });
-  private selection = svg('g', { 'pointer-events': 'none' });
+  private symbols = svg('g', { 'pointer-events': 'none', class: 'relief' });
+  private coastline = svg('g', { 'pointer-events': 'none', class: 'coastline' });
+  private selection = svg('g', { 'pointer-events': 'none', class: 'selection' });
+  private hoverLayer = svg('g', { 'pointer-events': 'none', class: 'hover' });
   private centers = svg('g', { 'pointer-events': 'none', display: 'none' });
   private water = svg('g', { 'pointer-events': 'none', class: 'water-network', 'clip-path': 'url(#river-land-clip)', display: 'none' });
   private riverClip = svg('clipPath', { id: 'river-land-clip', clipPathUnits: 'userSpaceOnUse' });
   private paths: SVGPolygonElement[] = [];
-  private selected?: number;
-  private scale = 1;
-  private tx = 0;
-  private ty = 0;
+  private latitudeLabels: Array<{ y: number; element: HTMLSpanElement }> = [];
   private drag?: { x: number; y: number; tx: number; ty: number; moved: boolean; pointerId: number };
   private suppressClick = false;
+  private hoverId?: number;
+  private previewId?: number;
+  private flight = 0;
+  private revealTimer?: ReturnType<typeof setTimeout>;
   onSelect: (cell: Cell) => void = () => {};
   onZoom: (scale: number) => void = () => {};
+  /** Pointer hover over a cell (undefined when leaving the map or dragging). */
+  onHover: (cell: Cell | undefined, clientX: number, clientY: number) => void = () => {};
+  /** World coordinate under the pointer, for the HUD readout. */
+  onCursor: (point: Point | undefined) => void = () => {};
 
   constructor(container: HTMLElement) {
     this.element = svg('svg', { viewBox: '0 0 1600 1000', role: 'img', 'aria-label': t('map.accessible') });
     this.element.classList.add('world-svg');
+    this.surface.className = 'map-surface';
+    this.gpuHost.className = 'map-gpu-layer';
+    this.labels.className = 'map-graticule-labels';
+    this.labels.setAttribute('aria-hidden', 'true');
+    this.foreground.classList.add('map-selection-svg');
     this.borders.setAttribute('pointer-events', 'none');
     const definitions = svg('defs');
     definitions.append(this.riverClip);
-    this.scene.append(definitions, this.polygons, this.symbols, this.borders, this.coastline, this.water, this.centers, this.selection);
+    this.scene.append(definitions, this.polygons, this.symbols, this.borders, this.graticule, this.coastline, this.water);
     this.element.append(this.scene);
-    container.append(this.element);
+    this.foregroundScene.append(this.centers, this.hoverLayer, this.selection);
+    this.foreground.append(this.foregroundScene);
+    this.surface.append(this.element, this.gpuHost, this.foreground, this.labels);
+    container.append(this.surface);
+    this.overlay = new RiverOverlay(this.gpuHost, (status) => {
+      this.gpuActive = status === 'gpu';
+      this.updateWater();
+    });
+    this.unsubscribe = this.camera.subscribe((view) => {
+      const transform = `translate(${view.tx} ${view.ty}) scale(${view.scale})`;
+      this.scene.setAttribute('transform', transform);
+      this.foregroundScene.setAttribute('transform', transform);
+      this.overlay.setView(view);
+      this.placeLabels();
+      this.onZoom(view.scale);
+    });
+    this.observer = new ResizeObserver(this.resize);
+    this.observer.observe(this.surface);
+    window.addEventListener('resize', this.resize, { signal: this.events.signal });
+    this.watchPixelRatio();
+    const signal = this.events.signal;
     this.element.addEventListener('wheel', (event) => {
       event.preventDefault();
-      this.zoomAt(Math.exp(-event.deltaY * 0.0015), this.local(event.clientX, event.clientY));
-    }, { passive: false });
+      this.cancelFlight();
+      this.camera.zoom(Math.exp(-event.deltaY * 0.0015), this.local(event.clientX, event.clientY));
+    }, { passive: false, signal });
     this.element.addEventListener('pointerdown', (event) => {
       if (event.button !== 0) return;
-      this.drag = { x: event.clientX, y: event.clientY, tx: this.tx, ty: this.ty, moved: false, pointerId: event.pointerId };
+      this.cancelFlight();
+      const { tx, ty } = this.camera.state;
+      this.drag = { x: event.clientX, y: event.clientY, tx, ty, moved: false, pointerId: event.pointerId };
       // Capture only after a drag starts, preserving normal polygon clicks.
-    });
+    }, { signal });
     this.element.addEventListener('pointermove', (event) => {
-      if (!this.drag) return;
+      this.onCursor(this.worldPoint(event.clientX, event.clientY));
+      if (!this.drag) {
+        if (this.hoverId !== undefined && this.world) this.onHover(this.world.cells[this.hoverId], event.clientX, event.clientY);
+        return;
+      }
       const start = this.local(this.drag.x, this.drag.y);
       const current = this.local(event.clientX, event.clientY);
       if (Math.hypot(event.clientX - this.drag.x, event.clientY - this.drag.y) > 4) {
+        if (!this.drag.moved) { this.setHover(undefined); this.element.classList.add('dragging'); }
         this.drag.moved = true;
         if (!this.element.hasPointerCapture(event.pointerId)) this.element.setPointerCapture(event.pointerId);
       }
       if (this.drag.moved) {
-        this.tx = this.drag.tx + current.x - start.x;
-        this.ty = this.drag.ty + current.y - start.y;
-        this.transform();
+        this.camera.pan(this.drag.tx + current.x - start.x, this.drag.ty + current.y - start.y);
       }
-    });
+    }, { signal });
+    this.element.addEventListener('pointerover', (event) => {
+      if (this.drag?.moved || !(event.target instanceof SVGElement)) return;
+      const id = event.target.dataset.cell;
+      if (id !== undefined) this.setHover(Number(id), event.clientX, event.clientY);
+    }, { signal });
+    this.element.addEventListener('pointerleave', () => {
+      this.setHover(undefined);
+      this.onCursor(undefined);
+    }, { signal });
     const endDrag = () => {
       if (!this.drag) return;
       this.suppressClick = this.drag.moved;
       if (this.element.hasPointerCapture(this.drag.pointerId)) this.element.releasePointerCapture(this.drag.pointerId);
       this.drag = undefined;
+      this.element.classList.remove('dragging');
       setTimeout(() => { this.suppressClick = false; }, 0);
     };
-    this.element.addEventListener('pointerup', endDrag);
-    this.element.addEventListener('pointercancel', endDrag);
+    this.element.addEventListener('pointerup', endDrag, { signal });
+    this.element.addEventListener('pointercancel', endDrag, { signal });
     this.element.addEventListener('click', (event) => {
       if (this.suppressClick || !this.world || !(event.target instanceof SVGElement)) return;
       const id = event.target.dataset.cell;
       if (id !== undefined) this.select(Number(id));
-    });
+    }, { signal });
   }
 
-  private local(x: number, y: number): DOMPoint {
-    const matrix = this.element.getScreenCTM();
-    return matrix ? new DOMPoint(x, y).matrixTransform(matrix.inverse()) : new DOMPoint(x, y);
+  private resize = (): void => {
+    const rect = this.surface.getBoundingClientRect();
+    this.camera.setViewport(rect.width, rect.height, window.devicePixelRatio || 1);
+  };
+  private watchPixelRatio = (): void => {
+    this.ratioQuery?.removeEventListener('change', this.watchPixelRatio);
+    this.ratioQuery = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    this.ratioQuery.addEventListener('change', this.watchPixelRatio, { once: true, signal: this.events.signal });
+    this.resize();
+  };
+  private local(x: number, y: number): Point {
+    const rect = this.surface.getBoundingClientRect();
+    return this.camera.toView({ x: x - rect.left, y: y - rect.top });
   }
-  private transform(): void {
-    // Keep at least part of the world in frame; reset always restores full view.
-    this.tx = Math.max(-1600 * this.scale + 180, Math.min(1420, this.tx));
-    this.ty = Math.max(-1000 * this.scale + 120, Math.min(880, this.ty));
-    this.scene.setAttribute('transform', `translate(${this.tx} ${this.ty}) scale(${this.scale})`);
-    this.onZoom(this.scale);
+  private worldPoint(x: number, y: number): Point | undefined {
+    if (!this.world) return undefined;
+    const rect = this.surface.getBoundingClientRect();
+    const transform = screenTransform(this.camera.state);
+    const point = { x: (x - rect.left - transform.x) / transform.scale, y: (y - rect.top - transform.y) / transform.scale };
+    return point.x >= 0 && point.y >= 0 && point.x <= this.world.width && point.y <= this.world.height ? point : undefined;
   }
-  private zoomAt(factor: number, p: Point): void {
-    const next = Math.max(0.75, Math.min(7, this.scale * factor));
-    const ratio = next / this.scale;
-    this.tx = p.x - (p.x - this.tx) * ratio;
-    this.ty = p.y - (p.y - this.ty) * ratio;
-    this.scale = next;
-    this.transform();
+  zoom(factor: number): void { this.cancelFlight(); this.camera.zoom(factor); }
+  reset(): void { this.cancelFlight(); this.camera.reset(); this.onZoom(this.camera.state.scale); }
+
+  private cancelFlight(): void { if (this.flight) cancelAnimationFrame(this.flight); this.flight = 0; }
+  /** Smoothly center a world point; scale defaults to the current zoom. */
+  flyTo(point: Point, scale = this.camera.state.scale, duration = 750): void {
+    this.cancelFlight();
+    const from = { ...this.camera.state };
+    const { viewportWidth, viewportHeight } = from;
+    const center = this.camera.toView({ x: viewportWidth / 2, y: viewportHeight / 2 });
+    const target = { scale, tx: center.x - point.x * scale, ty: center.y - point.y * scale };
+    if (duration <= 0 || matchMedia('(prefers-reduced-motion: reduce)').matches) { this.camera.setView(target.scale, target.tx, target.ty); return; }
+    const start = performance.now();
+    const step = (now: number) => {
+      const k = ease(Math.min(1, (now - start) / duration));
+      this.camera.setView(from.scale + (target.scale - from.scale) * k, from.tx + (target.tx - from.tx) * k, from.ty + (target.ty - from.ty) * k);
+      this.flight = k < 1 ? requestAnimationFrame(step) : 0;
+    };
+    this.flight = requestAnimationFrame(step);
   }
-  zoom(factor: number): void { this.zoomAt(factor, { x: 800, y: 500 }); }
-  reset(): void { this.scale = 1; this.tx = 0; this.ty = 0; this.transform(); }
+  focus(id: number, zoomIn = true): void {
+    const cell = this.world?.cells[id];
+    if (!cell) return;
+    this.select(id);
+    this.flyTo(cell.centroid, zoomIn ? Math.max(this.camera.state.scale, 2.4) : this.camera.state.scale);
+  }
+
+  private placeLabels(): void {
+    if (!this.world) return;
+    const view = this.camera.state;
+    const { scale, y } = screenTransform(view);
+    for (const label of this.latitudeLabels) {
+      const top = y + label.y * scale;
+      label.element.style.transform = `translate3d(0, ${top.toFixed(1)}px, 0)`;
+      label.element.hidden = top < 8 || top > view.viewportHeight - 8;
+    }
+  }
 
   setWorld(world: WorldMap): void {
     this.world = world;
-    this.selected = undefined;
+    this.cancelFlight();
+    this.hoverId = this.previewId = undefined;
+    this.element.setAttribute('viewBox', `0 0 ${world.width} ${world.height}`);
+    this.foreground.setAttribute('viewBox', `0 0 ${world.width} ${world.height}`);
+    this.overlay.setWorld(world);
+    this.camera.setWorld(world.width, world.height);
     this.paths = [];
-    for (const group of [this.polygons, this.borders, this.symbols, this.coastline, this.water, this.riverClip, this.centers, this.selection]) group.replaceChildren();
+    for (const group of [this.polygons, this.borders, this.symbols, this.coastline, this.water, this.riverClip, this.centers, this.selection, this.hoverLayer, this.graticule]) group.replaceChildren();
+    const cx = world.width / 2, cy = world.height / 2;
+    const reach = Math.hypot(cx, cy);
     for (const cell of world.cells) {
-      const polygon = svg('polygon', { points: points(cell.polygon), fill: terrainColors[cell.terrain], 'data-cell': String(cell.id) });
-      polygon.append(svg('title'));
-      polygon.querySelector('title')!.textContent = `${t('inspector.cell', { value: cell.id + 1 })} · ${t(`terrain.${cell.terrain}`)}`;
+      const delay = Math.round(Math.hypot(cell.centroid.x - cx, cell.centroid.y - cy) / reach * 1100 + hash(cell.id) * 220);
+      const polygon = svg('polygon', {
+        points: points(cell.polygon), fill: cellFill(cell, this.layer, this.resource, this.month),
+        'data-cell': String(cell.id), class: cell.is_land ? 'cell land' : 'cell sea', style: `--d:${delay}ms`,
+      });
       this.paths.push(polygon);
       this.polygons.append(polygon);
       if (cell.is_land) this.riverClip.append(svg('polygon', { points: points(cell.polygon) }));
-      this.centers.append(svg('circle', { cx: String(cell.site.x), cy: String(cell.site.y), r: '2.3', fill: '#3e5144', opacity: '0.65' }));
+      this.centers.append(svg('circle', { cx: String(cell.site.x), cy: String(cell.site.y), r: '2.2', class: 'cell-center' }));
       if (cell.landform === 'mountains' && cell.land_fraction > 0.5) {
         const { x, y } = cell.centroid;
-        this.symbols.append(svg('path', { d: `M${x - 7},${y + 4} l7,-12 l7,12 M${x - 2},${y - 5} l3,2 l2,-2`, fill: 'none', stroke: '#59645c', 'stroke-width': '1.3', opacity: '0.55' }));
+        this.symbols.append(svg('path', { d: `M${x - 7},${y + 4} l7,-12 l7,12 M${x - 2},${y - 5} l3,2 l2,-2` }));
       }
     }
     for (const edge of world.edges) {
       const d = `M${edge.start.x},${edge.start.y} L${edge.end.x},${edge.end.y}`;
-      this.borders.append(svg('path', { d, stroke: edge.kind === 'sea' ? '#84a0aa' : '#62735b', opacity: edge.kind === 'sea' ? '0.13' : '0.3', 'stroke-width': '0.8', fill: 'none' }));
-      if (edge.kind === 'coast') this.coastline.append(svg('path', { d, stroke: '#6b8579', 'stroke-width': '1.5', opacity: '0.75', fill: 'none' }));
+      this.borders.append(svg('path', { d, class: `edge edge-${edge.kind}` }));
+      if (edge.kind === 'coast') {
+        this.coastline.append(svg('path', { d, class: 'coast-glow' }), svg('path', { d, class: 'coast-line' }));
+      }
+    }
+    // Graticule: 经纬 — latitude every 15°, meridians every tenth of the width.
+    this.labels.replaceChildren();
+    this.latitudeLabels = [];
+    const [south, north] = world.environment.latitude_range;
+    for (let lat = Math.ceil(south / 15) * 15; lat <= north; lat += 15) {
+      const y = (north - lat) / (north - south) * world.height;
+      if (y <= 0 || y >= world.height) continue;
+      this.graticule.append(svg('line', { x1: '0', x2: String(world.width), y1: String(y), y2: String(y), class: lat === 0 ? 'equator' : 'parallel' }));
+      const element = document.createElement('span');
+      element.className = lat === 0 ? 'lat-label equator' : 'lat-label';
+      element.textContent = lat === 0 ? t('map.equator') : t(lat > 0 ? 'map.latN' : 'map.latS', { value: Math.abs(lat) });
+      this.labels.append(element);
+      this.latitudeLabels.push({ y, element });
+    }
+    for (let i = 1; i < 10; ++i) {
+      const x = world.width * i / 10;
+      this.graticule.append(svg('line', { x1: String(x), x2: String(x), y1: '0', y2: String(world.height), class: 'meridian' }));
     }
     // Rivers remain an optional line overlay; lake areas use the cell's dominant terrain.
-    for (const river of world.environment.rivers) {
+    for (const river of displayRivers(world)) {
       this.water.append(svg('path', {
         d: river.points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' '),
-        fill: 'none', stroke: '#548fa6', 'stroke-opacity': '0.85', 'stroke-width': String(0.55 + river.flow_index / 100 * 1.25),
+        fill: 'none', stroke: '#5fd0ff', 'stroke-opacity': '0.9', 'stroke-width': String(0.55 + river.flow_index / 100 * 1.25),
         'vector-effect': 'non-scaling-stroke',
         'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'data-river': String(river.id),
       }));
     }
+    // Ripple-in reveal from the map centre; removed afterwards so pans stay cheap.
+    clearTimeout(this.revealTimer);
+    this.element.classList.remove('revealing');
+    void this.element.getBoundingClientRect();
+    this.element.classList.add('revealing');
+    this.revealTimer = setTimeout(() => this.element.classList.remove('revealing'), 2200);
     this.reset();
+    this.placeLabels();
   }
 
   setLayer(layer: Layer, resource: ResourceKind): void {
+    this.layer = layer;
+    this.resource = resource;
     if (!this.world) return;
-    for (const cell of this.world.cells) this.paths[cell.id].setAttribute('fill', fill(cell, layer, resource));
+    for (const cell of this.world.cells) this.paths[cell.id].setAttribute('fill', cellFill(cell, layer, resource, this.month));
     this.symbols.setAttribute('display', layer === 'terrain' ? '' : 'none');
+  }
+  setMonth(month?: number): void {
+    this.month = month !== undefined && Number.isInteger(month) && month >= 0 && month < 12 ? month : undefined;
+    this.setLayer(this.layer, this.resource);
   }
   showBorders(show: boolean): void { this.borders.setAttribute('display', show ? '' : 'none'); }
   showCenters(show: boolean): void { this.centers.setAttribute('display', show ? '' : 'none'); }
-  showWater(show: boolean): void { this.water.setAttribute('display', show ? '' : 'none'); }
+  showGraticule(show: boolean): void {
+    this.graticule.setAttribute('display', show ? '' : 'none');
+    this.labels.hidden = !show;
+  }
+  private updateWater(): void { this.water.setAttribute('display', this.waterVisible && !this.gpuActive ? '' : 'none'); }
+  showWater(show: boolean): void {
+    this.waterVisible = show;
+    this.overlay.setVisible(show);
+    this.updateWater();
+  }
+
+  private drawHover(): void {
+    this.hoverLayer.replaceChildren();
+    const id = this.previewId ?? this.hoverId;
+    const cell = id === undefined ? undefined : this.world?.cells[id];
+    if (!cell || id === this.selectedId) return;
+    this.hoverLayer.append(svg('polygon', { points: points(cell.polygon), class: 'hover-fill' }));
+  }
+  private setHover(id: number | undefined, x = 0, y = 0): void {
+    if (id === this.hoverId) return;
+    this.hoverId = id;
+    this.drawHover();
+    this.onHover(id === undefined ? undefined : this.world?.cells[id], x, y);
+  }
+  /** Highlight a cell from outside the map (e.g. hovering a neighbour chip). */
+  preview(id?: number): void {
+    this.previewId = id;
+    this.drawHover();
+  }
 
   select(id: number): void {
     const cell = this.world?.cells[id];
     if (!cell) return;
-    this.selected = id;
+    this.camera.select(id);
     this.selection.replaceChildren();
     for (const n of cell.neighbors) {
-      this.selection.append(svg('polygon', { points: points(this.world!.cells[n].polygon), fill: '#ffffff', 'fill-opacity': '0.1', stroke: '#f5eed2', 'stroke-width': '1.8', 'stroke-dasharray': '4 3' }));
+      this.selection.append(svg('polygon', { points: points(this.world!.cells[n].polygon), class: 'neighbor' }));
     }
-    this.selection.append(svg('polygon', { points: points(cell.polygon), fill: '#fff7d2', 'fill-opacity': '0.22', stroke: '#fff9d9', 'stroke-width': '4' }));
-    this.selection.append(svg('polygon', { points: points(cell.polygon), fill: 'none', stroke: '#364b3e', 'stroke-width': '1.5' }));
+    const shape = points(cell.polygon);
+    this.selection.append(
+      svg('polygon', { points: shape, class: 'selected-glow' }),
+      svg('polygon', { points: shape, class: 'selected-fill' }),
+      svg('polygon', { points: shape, class: 'selected-ants' }),
+    );
+    this.drawHover();
     this.onSelect(cell);
   }
 
-  get selectedId(): number | undefined { return this.selected; }
+  get selectedId(): number | undefined { return this.camera.state.selectedId; }
+
+  destroy(): void {
+    this.cancelFlight();
+    clearTimeout(this.revealTimer);
+    this.events.abort();
+    this.observer.disconnect();
+    this.unsubscribe();
+    this.overlay.destroy();
+    this.surface.remove();
+  }
 }

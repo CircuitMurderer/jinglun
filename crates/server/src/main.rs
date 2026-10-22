@@ -125,7 +125,15 @@ mod tests {
     async fn api_returns_real_world_and_structured_errors() {
         let (status, body) = request(r#"{"seed":"接口验证","cell_count":100}"#).await;
         assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["map"]["generator_version"], "0.3.0");
         assert_eq!(body["map"]["cells"].as_array().unwrap().len(), 100);
+        assert_eq!(
+            body["map"]["cells"][0]["climate"]["months"]
+                .as_array()
+                .unwrap()
+                .len(),
+            12
+        );
         assert!(body["meta"]["generation_ms"].as_f64().unwrap() > 0.0);
         let (status, body) = request(r#"{"cell_count":999999}"#).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);

@@ -1,4 +1,4 @@
-import type { MapConfig, MapResponse } from './types';
+import type { Cell, MapConfig, MapResponse } from './types';
 import { isMessageKey, type MessageKey, type Params } from './i18n';
 
 export class ApiError extends Error {
@@ -20,10 +20,15 @@ export async function generateMap(config: MapConfig): Promise<MapResponse> {
       const code = data?.error?.code;
       throw new ApiError(typeof code === 'string' && isMessageKey(code) ? code : 'error.generation', data?.error?.params ?? {});
     }
-    if (!data?.map || data.map.generator_version !== '0.2.1' || !Array.isArray(data.map.cells)
+    if (!data?.map || data.map.generator_version !== '0.3.0' || !Array.isArray(data.map.cells)
       || data.map.cells.length !== config.cell_count || !Array.isArray(data.map.edges)
       || !Number.isFinite(data.map.width) || !Number.isFinite(data.meta?.generation_ms)
-      || !Array.isArray(data.map.environment?.layers) || !Array.isArray(data.map.environment?.rivers)) {
+      || !Array.isArray(data.map.environment?.layers) || !Array.isArray(data.map.environment?.rivers)
+      || !data.map.cells.every((cell: Cell) => Array.isArray(cell.climate?.months)
+        && cell.climate.months.length === 12 && cell.climate.months.every((month) =>
+          month && Number.isFinite(month.temperature_c) && Number.isFinite(month.precipitation_mm)
+          && Number.isFinite(month.snowmelt_mm) && Number.isFinite(month.runoff_mm))
+        && Number.isFinite(cell.climate.growing_months) && Number.isFinite(cell.climate.rainfed_months))) {
       throw new ApiError('error.response');
     }
     return data as MapResponse;

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>河网渲染验收</title>
+  <link rel="stylesheet" href="/src/style.css" />
+  <style>
+    body { padding: 20px; }
+    .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 16px; }
+    .controls button { padding: 8px 12px; border: 1px solid #b7c4b1; background: #fff; cursor: pointer; }
+    .map-canvas { height: 600px; min-height: 0; }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <button id="toggle">开关河网</button>
+    <button id="lose">模拟 GPU 上下文丢失</button>
+    <button id="remount">销毁并重新挂载</button>
+    <output id="status">正在生成验收地图</output>
+  </div>
+  <div class="map-canvas" id="map"></div>
+  <script type="module">
+    // Development fixture only; Vite's production entry does not include it.
+    import { MapView } from '../src/map.ts';
+    import { generateMap } from '../src/api.ts';
+    const host = document.querySelector('#map');
+    const status = document.querySelector('#status');
+    const { map: world } = await generateMap({ seed: '河网渲染验收', cell_count: 500, relaxations: 2, land_ratio: 0.45 });
+    let view;
+    let visible = true;
+    const update = () => { status.textContent = host.querySelector('.map-gpu-layer')?.dataset.riverRenderer ?? 'destroyed'; };
+    new MutationObserver(update).observe(host, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-river-renderer'] });
+    function mount() {
+      view?.destroy();
+      view = new MapView(host);
+      view.setWorld(world);
+      view.showWater(visible);
+      update();
+    }
+    document.querySelector('#toggle').addEventListener('click', () => {
+      visible = !visible;
+      view.showWater(visible);
+    });
+    document.querySelector('#lose').addEventListener('click', () => {
+      const canvas = host.querySelector('canvas');
+      const gl = canvas?.getContext('webgl2') ?? canvas?.getContext('webgl');
+      const extension = gl?.getExtension('WEBGL_lose_context');
+      if (extension) extension.loseContext();
+      else status.textContent = '当前没有可丢失的 WebGL 上下文';
+    });
+    document.querySelector('#remount').addEventListener('click', mount);
+    mount();
+  </script>
+</body>
+</html>
