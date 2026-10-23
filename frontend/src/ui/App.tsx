@@ -8,6 +8,7 @@ import { CommandPalette, HelpDialog } from './CommandPalette';
 import { GenesisPanel } from './GenesisPanel';
 import { Icon } from './Icon';
 import { Inspector } from './Inspector';
+import { Comparison } from '../comparison';
 import { LayerDock } from './LayerDock';
 import { MapStage, type Status, type Toggles } from './MapStage';
 import { initialCell, isClimateLayer, layers, loadConfig, saveConfig } from './shared';
@@ -19,6 +20,7 @@ export function App() {
   useTheme();
   const [config, setConfig] = useState<MapConfig>(() => loadConfig(t('settings.defaultSeed')));
   const [result, setResult] = useState<MapResponse>();
+  const [generationSerial, setGenerationSerial] = useState(0);
   const [status, setStatus] = useState<Status>('loading');
   const [error, setError] = useState<string>();
   const [layer, setLayer] = useState<Layer>('terrain');
@@ -51,6 +53,7 @@ export function App() {
       const response = await generateMap(normalized);
       saveConfig(normalized);
       setResult(response);
+      setGenerationSerial(serial => serial + 1);
       // Update both in the same render, including when the new world has fewer cells.
       setSelected(initialCell(response.map.cells));
       setStatus('ready');
@@ -366,6 +369,8 @@ export function App() {
               </div>
             </div>
             <Inspector
+              comparison={<Comparison key={generationSerial} world={world} selectedId={selected?.id} month={month}
+                onPeriod={next => { setPlaying(false); setMonth(next); }} onInspect={id => handleFocus(id, false)} />}
               world={world}
               cell={selected}
               month={month}
