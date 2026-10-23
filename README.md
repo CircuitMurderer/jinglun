@@ -22,6 +22,7 @@ npm run dev
 - 页面：<http://127.0.0.1:5173>
 - 后端：<http://127.0.0.1:3001>
 - 首次运行会编译 Rust 后端；启动脚本等后端就绪后再启动页面，避免编译期间请求失败。
+- 自 0.9.1 起，`npm run dev` 和 `npm run dev:server` 默认使用 Rust release 优化构建；Rust 编译可能更久，前端仍保留 Vite 热更新。生成器数据版本仍为 0.9.0。
 - `Ctrl+C` 停止前后端。
 - 启动脚本会查找 `~/.cargo/bin/cargo`，无需修改全局 PATH。项目默认使用 `.cache/cargo` 缓存依赖；已设置 `CARGO_HOME` 时保留该设置。
 
