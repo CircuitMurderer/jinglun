@@ -1,5 +1,4 @@
 //! Natural geography is sampled independently of the governance tessellation.
-use crate::atmosphere;
 use crate::construction::{self, KM_PER_MAP_UNIT, Site, WorldScale};
 use crate::geology::{Deposit, Geology, MineralOccurrence, Province};
 use crate::hydrology::{self, Drainage, Lake, River, WaterBudget};
@@ -8,6 +7,7 @@ use crate::seasonal::{self, ClimateProfile};
 use crate::soil::{self, SedimentBudget, Soil};
 use crate::water::{GroundProfile, WaterSource};
 use crate::{Cell, HEIGHT, Point, Resource, Terrain, WIDTH, fbm, index};
+use crate::{atmosphere, tectonics, thermal};
 use noise::{NoiseFn, Simplex};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -62,6 +62,8 @@ pub struct Environment {
     pub water_budget: WaterBudget,
     pub scale: WorldScale,
     pub geology_provinces: Vec<Province>,
+    pub tectonic_regions: Vec<tectonics::Region>,
+    pub tectonic_boundaries: Vec<tectonics::Boundary>,
     pub deposits: Vec<Deposit>,
     pub sediment_budget: SedimentBudget,
 }
@@ -87,6 +89,7 @@ struct Sample {
     vegetation: &'static str,
 }
 pub(crate) struct Field {
+    structure: tectonics::Structure,
     geology: Geology,
     soils: Vec<Soil>,
     sites: Vec<Site>,
@@ -96,10 +99,6 @@ pub(crate) struct Field {
     atmosphere_budget: AtmosphereBudget,
 }
 
-fn smooth(value: f64, a: f64, b: f64) -> f64 {
-    let x = ((value - a) / (b - a)).clamp(0.0, 1.0);
-    x * x * (3.0 - 2.0 * x)
-}
 fn cardinal(id: usize) -> impl Iterator<Item = usize> {
     let (x, y) = (id % COLS, id / COLS);
     [
@@ -147,7 +146,7 @@ impl Field {
     pub fn generate(seed: u64, land_ratio: f64) -> Self {
         let continental = Simplex::new(seed as u32);
         let detail = Simplex::new((seed >> 32) as u32 ^ 0x139a);
-        let soil_noise = Simplex::new(seed as u32 ^ 0x751a);
+        let structure = tectonics::Structure::generate(seed, COLS, ROWS);
         let mut raw = vec![0.0; COLS * ROWS];
         for (id, value) in raw.iter_mut().enumerate() {
             let (x, y) = (
@@ -180,12 +179,7 @@ impl Field {
                 );
                 let u = (h - sea) / (high - sea).max(1e-9);
                 let ridge = 1.0 - detail.get([x * 6.0 + 7.0, y * 4.0 + 7.0]).abs();
-                let rugged = 30.0 + u.powf(1.25) * 2600.0 + ridge.powi(5) * u * 1100.0;
-                let plateau =
-                    smooth(fbm(&soil_noise, x * 2.5, y * 1.6, 2), 0.05, 0.3) * smooth(u, 0.16, 0.4);
-                (rugged * (1.0 - plateau)
-                    + (1550.0 + detail.get([x * 0.8, y * 0.8]) * 60.0) * plateau)
-                    .round()
+                tectonics::land_elevation(&structure.settings[id], u, ridge)
             })
             .collect();
         let atmosphere::Climate {
@@ -196,14 +190,6 @@ impl Field {
         let rain: Vec<f64> = monthly_rain
             .iter()
             .map(|months| months.iter().sum())
-            .collect();
-        let temperature: Vec<f64> = elevation
-            .iter()
-            .enumerate()
-            .map(|(id, h)| {
-                let latitude = (((id / COLS) as f64 + 0.5) / ROWS as f64 - 0.5).abs() * 150.0;
-                31.0 - latitude * 0.6 - h.max(0.0) * 0.0058
-            })
             .collect();
         let mut ocean_distance = vec![usize::MAX; elevation.len()];
         let mut queue = VecDeque::new();
@@ -221,25 +207,42 @@ impl Field {
                 }
             }
         }
+        // Radiation is shared by each latitude row; thermal/PET normals are
+        // evaluated once and reused by both soil-water passes.
+        let solar: Vec<_> = (0..ROWS)
+            .map(|y| thermal::solar_year((0.5 - (y as f64 + 0.5) / ROWS as f64) * 150.0))
+            .collect();
+        let heat: Vec<_> = (0..raw.len())
+            .map(|id| {
+                let latitude = (0.5 - ((id / COLS) as f64 + 0.5) / ROWS as f64) * 150.0;
+                let continentality = 1.0 - (-(ocean_distance[id] as f64) / 18.0).exp();
+                thermal::ThermalProfile::new(
+                    thermal::mean_temperature(latitude, elevation[id], continentality),
+                    latitude,
+                    continentality,
+                    &monthly_rain[id],
+                    &solar[id / COLS],
+                )
+            })
+            .collect();
+        let temperature: Vec<_> = heat.iter().map(|h| h.mean_c).collect();
         let flatness: Vec<u8> = (0..raw.len())
             .map(|id| local_flatness(&elevation, id, COLS, ROWS))
             .collect();
         let scale = WorldScale::new(DX, DY);
-        let geology = Geology::generate(seed, &elevation, COLS, ROWS, scale.sample_area_km2);
+        let geology = Geology::generate(
+            seed,
+            &structure,
+            &elevation,
+            COLS,
+            ROWS,
+            scale.sample_area_km2,
+        );
         let profiles_for = |capacities: &[f64]| -> Vec<ClimateProfile> {
             (0..raw.len())
                 .map(|id| {
-                    let latitude = (0.5 - ((id / COLS) as f64 + 0.5) / ROWS as f64) * 150.0;
-                    let continentality = 1.0 - (-(ocean_distance[id] as f64) / 18.0).exp();
-                    // Root-zone capacity is a bounded terrain proxy, not measured soil depth.
-                    let capacity = capacities[id];
-                    let mut profile = seasonal::normals(
-                        temperature[id],
-                        &monthly_rain[id],
-                        latitude,
-                        continentality,
-                        capacity,
-                    );
+                    let mut profile =
+                        seasonal::with_thermal(&heat[id], &monthly_rain[id], capacities[id]);
                     if elevation[id] <= 0.0 {
                         // Marine samples provide atmospheric normals only. Do not
                         // invent terrestrial soil, crops or runoff over the ocean.
@@ -426,6 +429,7 @@ impl Field {
             })
             .collect();
         Self {
+            structure,
             geology,
             soils,
             sites,
@@ -1023,6 +1027,8 @@ impl Field {
             water_budget: self.drainage.budget.clone(),
             scale: WorldScale::new(DX, DY),
             geology_provinces: self.geology.provinces.clone(),
+            tectonic_regions: self.structure.regions.clone(),
+            tectonic_boundaries: self.structure.boundaries.clone(),
             deposits: self.geology.deposits.clone(),
             sediment_budget: self.sediment_budget.clone(),
         }
@@ -1110,12 +1116,24 @@ mod tests {
                 low.iter().filter(|(_, s)| dry(s)).count() as f64 / low.len() as f64 * 100.0;
             let rain = land.iter().map(|(_, s)| s.rain).sum::<f64>() / land.len() as f64;
             let maximum = land.iter().map(|(_, s)| s.rain).fold(0.0, f64::max);
+            let mean_temp =
+                land.iter().map(|(_, s)| s.temperature).sum::<f64>() / land.len() as f64;
+            let mean_pet = land.iter().map(|(_, s)| s.pet).sum::<f64>() / land.len() as f64;
+            let mountains = land
+                .iter()
+                .filter(|(_, s)| s.landform == "mountains")
+                .count() as f64
+                / land.len() as f64
+                * 100.0;
+            let plateau = land.iter().filter(|(_, s)| s.landform == "plateau").count() as f64
+                / land.len() as f64
+                * 100.0;
             let b = &field.atmosphere_budget;
             let error = (b.evaporation_input - b.precipitation - b.boundary_export).abs()
                 / b.evaporation_input.max(1.0);
             assert!(error < 1e-9);
             println!(
-                "{seed}: land={ratio}, dry={dry_land:.1}%, equatorial_dry={dry_low:.1}%, rain={rain:.0}mm, max={maximum:.0}mm, budget_error={error:.2e}, time={:.0}ms",
+                "{seed}: land={ratio}, dry={dry_land:.1}%, equatorial_dry={dry_low:.1}%, rain={rain:.0}mm, max={maximum:.0}mm, T={mean_temp:.1}C, PET={mean_pet:.0}mm, mountains={mountains:.1}%, plateau={plateau:.1}%, budget_error={error:.2e}, time={:.0}ms",
                 start.elapsed().as_secs_f64() * 1000.0
             );
         }

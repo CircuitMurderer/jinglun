@@ -1,7 +1,10 @@
 //! Synthetic geological provinces and finite, grid-based mineral occurrences.
 //! Geological history is independent of today's rainfall and governance cells.
-use crate::{fbm, index};
-use noise::{NoiseFn, Simplex};
+use crate::{
+    fbm, index,
+    tectonics::{KINDS, Structure},
+};
+use noise::Simplex;
 use serde::Serialize;
 use std::collections::VecDeque;
 
@@ -12,6 +15,7 @@ pub struct Province {
     pub id: usize,
     pub kind: &'static str,
     pub rock: &'static str,
+    pub tectonic_region_id: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -66,34 +70,29 @@ fn suitability(kind: &str) -> [f64; 5] {
 impl Geology {
     pub fn generate(
         seed: u64,
+        structure: &Structure,
         elevation: &[f64],
         cols: usize,
         rows: usize,
         sample_area: f64,
     ) -> Self {
         let noise = Simplex::new(seed as u32 ^ (seed >> 32) as u32 ^ 0x96bd31);
-        let kinds = ["sedimentary", "craton", "orogenic", "igneous"];
         let rocks = [
             "sandstone_shale",
             "ancient_basement",
             "metamorphic",
             "granite_basalt",
         ];
-        let provinces: Vec<_> = (0..24)
-            .map(|id| {
-                let choice = ((noise.get([id as f64 * 3.7, 31.4]) + 1.0) * 1000.0) as usize % 4;
-                Province {
-                    id,
-                    kind: kinds[choice],
-                    rock: rocks[choice],
-                }
-            })
-            .collect();
-        let sites: Vec<_> = (0..24)
-            .map(|id| {
-                let x = (id % 6) as f64 + 0.5 + noise.get([id as f64, 18.0]) * 0.35;
-                let y = (id / 6) as f64 + 0.5 + noise.get([id as f64, 49.0]) * 0.35;
-                (x / 6.0, y / 4.0)
+        let provinces: Vec<_> = structure
+            .regions
+            .iter()
+            .flat_map(|region| {
+                KINDS.iter().enumerate().map(move |(kind, &name)| Province {
+                    id: region.id * 4 + kind,
+                    kind: name,
+                    rock: rocks[kind],
+                    tectonic_region_id: region.id,
+                })
             })
             .collect();
         let mut field = Vec::with_capacity(elevation.len());
@@ -102,17 +101,8 @@ impl Geology {
                 (id % cols) as f64 / cols as f64,
                 (id / cols) as f64 / rows as f64,
             );
-            let wx = x + noise.get([x * 4.0, y * 4.0]) * 0.045;
-            let wy = y + noise.get([x * 4.0 + 18.0, y * 4.0]) * 0.045;
-            let province = sites
-                .iter()
-                .enumerate()
-                .min_by(|(_, a), (_, b)| {
-                    ((a.0 - wx).powi(2) + (a.1 - wy).powi(2))
-                        .total_cmp(&((b.0 - wx).powi(2) + (b.1 - wy).powi(2)))
-                })
-                .unwrap()
-                .0;
+            let setting = &structure.settings[id];
+            let province = setting.region * 4 + setting.kind;
             let kind = provinces[province].kind;
             let match_rock = match kind {
                 "sedimentary" => (0.55, 0.85, 140.0, 0.4),
@@ -214,7 +204,8 @@ mod tests {
     use super::*;
     #[test]
     fn deposits_have_eligible_hosts_and_partitioned_stock_matches_global_stock() {
-        let g = Geology::generate(42, &vec![200.0; 80 * 50], 80, 50, 10.0);
+        let structure = Structure::generate(42, 80, 50);
+        let g = Geology::generate(42, &structure, &vec![200.0; 80 * 50], 80, 50, 10.0);
         for kind in MINERALS {
             assert!(g.deposits.iter().any(|d| d.kind == kind), "missing {kind}");
         }
@@ -231,7 +222,7 @@ mod tests {
                 assert_eq!(g.provinces[d.province_id].kind, "sedimentary");
             }
         }
-        let sea = Geology::generate(42, &vec![-10.0; 80 * 50], 80, 50, 10.0);
+        let sea = Geology::generate(42, &structure, &vec![-10.0; 80 * 50], 80, 50, 10.0);
         assert!(sea.deposits.is_empty());
         assert_eq!(g.provinces, sea.provinces);
     }

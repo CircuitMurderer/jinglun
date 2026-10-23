@@ -121,7 +121,9 @@ export interface WorldMap {
     basins: Basin[];
     water_sources: WaterSource[];
     scale: { km_per_map_unit: number; sample_area_km2: number; water_unit_m3: number };
-    geology_provinces: Array<{ id: number; kind: GeologyKind; rock: 'sandstone_shale' | 'ancient_basement' | 'metamorphic' | 'granite_basalt' }>;
+    tectonic_regions: Array<{ id: number; center: Point; tendency: Point }>;
+    tectonic_boundaries: Array<{ a: number; b: number; kind: 'convergent' | 'divergent' | 'transform'; strength: number }>;
+    geology_provinces: Array<{ id: number; kind: GeologyKind; rock: 'sandstone_shale' | 'ancient_basement' | 'metamorphic' | 'granite_basalt'; tectonic_region_id: number }>;
     deposits: Array<{ id: number; kind: ResourceKind; province_id: number; area_km2: number; reserve_units: number; grade_index: number; depth_m: number }>;
     sediment_budget: { reference_years: number; eroded_m3: number; deposited_land_m3: number; trapped_lake_m3: number; ocean_export_m3: number; boundary_export_m3: number };
   };

@@ -1,4 +1,4 @@
-import type { Cell, MapConfig, MapResponse } from './types';
+import type { Cell, MapConfig, MapResponse, WorldMap } from './types';
 import { isMessageKey, type MessageKey, type Params } from './i18n';
 
 export class ApiError extends Error {
@@ -20,12 +20,17 @@ export async function generateMap(config: MapConfig): Promise<MapResponse> {
       const code = data?.error?.code;
       throw new ApiError(typeof code === 'string' && isMessageKey(code) ? code : 'error.generation', data?.error?.params ?? {});
     }
-    if (!data?.map || data.map.generator_version !== '0.7.0' || !Array.isArray(data.map.cells)
+    if (!data?.map || data.map.generator_version !== '0.8.0' || !Array.isArray(data.map.cells)
       || data.map.cells.length !== config.cell_count || !Array.isArray(data.map.edges)
       || !Number.isFinite(data.map.width) || !Number.isFinite(data.meta?.generation_ms)
       || !Array.isArray(data.map.environment?.layers) || !Array.isArray(data.map.environment?.rivers)
       || !Number.isFinite(data.map.environment?.scale?.water_unit_m3)
       || !Array.isArray(data.map.environment?.deposits) || !Array.isArray(data.map.environment?.geology_provinces)
+      || !Array.isArray(data.map.environment?.tectonic_regions) || data.map.environment.tectonic_regions.length < 2
+      || !Array.isArray(data.map.environment?.tectonic_boundaries)
+      || !data.map.environment.geology_provinces.every((province: WorldMap['environment']['geology_provinces'][number]) =>
+        Number.isInteger(province.tectonic_region_id) && province.tectonic_region_id >= 0
+        && province.tectonic_region_id < data.map.environment.tectonic_regions.length)
       || !Array.isArray(data.map.environment?.water_sources)
       || !data.map.environment.water_sources.every((source: {months?: unknown[]}) => Array.isArray(source.months) && source.months.length === 12)
       || !data.map.environment.rivers.every((river: {monthly_flow?: unknown[]; monthly_flow_index?: unknown[]}) => river.monthly_flow?.length === 12 && river.monthly_flow_index?.length === 12)

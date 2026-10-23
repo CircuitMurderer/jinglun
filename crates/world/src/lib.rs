@@ -12,12 +12,14 @@ mod hydrology;
 mod lakes;
 mod seasonal;
 mod soil;
+mod tectonics;
+mod thermal;
 mod water;
 pub use environment::Environment;
 pub use seasonal::ClimateProfile;
 pub use water::GroundProfile;
 
-pub const GENERATOR_VERSION: &str = "0.7.0";
+pub const GENERATOR_VERSION: &str = "0.8.0";
 pub const WIDTH: f64 = 1600.0;
 pub const HEIGHT: f64 = 1000.0;
 
@@ -601,6 +603,20 @@ mod tests {
             .unwrap();
             assert!(map.stats.land_cells > 0 && map.stats.sea_cells > 0);
             let budget = &map.environment.water_budget;
+            let regions = &map.environment.tectonic_regions;
+            assert_eq!(regions.len(), 12);
+            for (id, region) in regions.iter().enumerate() {
+                assert_eq!(region.id, id);
+                assert!(region.center.x.is_finite() && region.center.y.is_finite());
+            }
+            for boundary in &map.environment.tectonic_boundaries {
+                assert!(boundary.a < boundary.b && boundary.b < regions.len());
+                assert!(["convergent", "divergent", "transform"].contains(&boundary.kind));
+                assert!((0.0..=1.0).contains(&boundary.strength));
+            }
+            for province in &map.environment.geology_provinces {
+                assert!(province.tectonic_region_id < regions.len());
+            }
             let sediment = &map.environment.sediment_budget;
             assert!(
                 (sediment.eroded_m3

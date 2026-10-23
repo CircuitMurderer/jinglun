@@ -6,8 +6,9 @@ export function GeologyPanel({ cell, world, onResource }: { cell: Cell; world: W
     <h4>{t('geology.title')}</h4>
     <div className="chips">{cell.geology_provinces.map(id => {
       const province = world.environment.geology_provinces[id];
-      return <span key={id}>{t(`geology.kind.${province.kind}`)} · {t(`geology.rock.${province.rock}`)}</span>;
+      return <span key={id}>{t('geology.region', { value: province.tectonic_region_id + 1 })} · {t(`geology.kind.${province.kind}`)} · {t(`geology.rock.${province.rock}`)}</span>;
     })}</div>
+    <p className="note">{t('geology.structureNote')}</p>
     <p className="note">{t('geology.note')}</p>
     {cell.minerals.map(m => <details className="climate-table-wrap mineral-card" key={m.deposit_id}>
       <summary>{t(`resource.${m.kind}`)} · {t('geology.deposit', { value: m.deposit_id + 1 })}</summary>
