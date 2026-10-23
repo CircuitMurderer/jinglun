@@ -20,7 +20,7 @@ export async function generateMap(config: MapConfig): Promise<MapResponse> {
       const code = data?.error?.code;
       throw new ApiError(typeof code === 'string' && isMessageKey(code) ? code : 'error.generation', data?.error?.params ?? {});
     }
-    if (!data?.map || data.map.generator_version !== '0.6.0' || !Array.isArray(data.map.cells)
+    if (!data?.map || data.map.generator_version !== '0.7.0' || !Array.isArray(data.map.cells)
       || data.map.cells.length !== config.cell_count || !Array.isArray(data.map.edges)
       || !Number.isFinite(data.map.width) || !Number.isFinite(data.meta?.generation_ms)
       || !Array.isArray(data.map.environment?.layers) || !Array.isArray(data.map.environment?.rivers)
