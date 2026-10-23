@@ -10,6 +10,7 @@ mod environment;
 mod geology;
 mod hydrology;
 mod lakes;
+mod ocean;
 mod seasonal;
 mod soil;
 mod tectonics;
@@ -19,7 +20,7 @@ pub use environment::Environment;
 pub use seasonal::ClimateProfile;
 pub use water::GroundProfile;
 
-pub const GENERATOR_VERSION: &str = "0.8.0";
+pub const GENERATOR_VERSION: &str = "0.9.0";
 pub const WIDTH: f64 = 1600.0;
 pub const HEIGHT: f64 = 1000.0;
 
@@ -126,6 +127,8 @@ pub struct Cell {
     pub rainfall_mm: u32,
     pub temperature_c: f64,
     pub climate: ClimateProfile,
+    pub ocean: Option<ocean::OceanProfile>,
+    pub geography: environment::CellGeography,
     pub land_fraction: f64,
     pub lake_fraction: f64,
     pub endorheic_land_fraction: f64,
@@ -314,6 +317,8 @@ pub fn generate(config: MapConfig) -> Result<WorldMap, GenerationError> {
                 rainfall_mm: 0,
                 temperature_c: 0.0,
                 climate: ClimateProfile::default(),
+                ocean: None,
+                geography: environment::CellGeography::default(),
                 groundwater: GroundProfile::default(),
                 water_source_ids: vec![],
                 land_fraction: 0.0,
@@ -630,6 +635,29 @@ mod tests {
             let mut mineral_totals = vec![0.0; map.environment.deposits.len()];
             for cell in &map.cells {
                 let c = &cell.construction;
+                let g = &cell.geography;
+                assert!((g.area_km2 - cell.area * 100.0).abs() < 1e-6);
+                assert!(
+                    (g.dry_land_area_km2 + g.lake_area_km2 + g.ocean_area_km2 - g.area_km2).abs()
+                        < 1e-6
+                );
+                assert!((-75.0..=75.0).contains(&g.latitude_deg));
+                assert_eq!(g.land_elevation_m.is_some(), cell.land_fraction > 0.0);
+                if let Some(h) = &g.land_elevation_m {
+                    assert!(h.min > 0.0 && h.mean >= h.min - 1e-9 && h.mean <= h.max + 1e-9);
+                }
+                assert_eq!(cell.ocean.is_some(), cell.land_fraction < 1.0);
+                if let Some(sea) = &cell.ocean {
+                    assert!((0.0..=1.000001).contains(&sea.current_strength));
+                    assert!(
+                        sea.current_east.hypot(sea.current_north) <= sea.current_strength + 1e-9
+                    );
+                    assert!(
+                        sea.surface_temperature_c
+                            .iter()
+                            .all(|t| t.is_finite() && (-1.801..=32.001).contains(t))
+                    );
+                }
                 assert!(
                     (c.buildable_fraction + c.conditional_fraction + c.unavailable_fraction - 1.0)
                         .abs()

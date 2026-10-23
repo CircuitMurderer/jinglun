@@ -17,6 +17,15 @@ export interface ClimateProfile {
   continentality: number; growing_months: number; rainfed_months: number; cold_months: number;
   snow_storage_change_mm: number; soil_storage_change_mm: number;
 }
+export interface OceanProfile {
+  surface_temperature_c: number[]; temperature_anomaly_c: number[];
+  current_east: number; current_north: number; current_strength: number;
+}
+export interface CellGeography {
+  latitude_deg: number; area_km2: number;
+  dry_land_area_km2: number; lake_area_km2: number; ocean_area_km2: number;
+  land_elevation_m: { mean: number; min: number; max: number } | null;
+}
 export interface GroundMonth {
   recharge_mm: number; seepage_mm: number; baseflow_mm: number;
   storage_mm: number; storage_change_mm: number; tds_mg_l: number;
@@ -57,6 +66,8 @@ export interface Cell {
   rainfall_mm: number;
   temperature_c: number;
   climate: ClimateProfile;
+  ocean: OceanProfile | null;
+  geography: CellGeography;
   land_fraction: number;
   lake_fraction: number;
   endorheic_land_fraction: number;
@@ -126,6 +137,7 @@ export interface WorldMap {
     geology_provinces: Array<{ id: number; kind: GeologyKind; rock: 'sandstone_shale' | 'ancient_basement' | 'metamorphic' | 'granite_basalt'; tectonic_region_id: number }>;
     deposits: Array<{ id: number; kind: ResourceKind; province_id: number; area_km2: number; reserve_units: number; grade_index: number; depth_m: number }>;
     sediment_budget: { reference_years: number; eroded_m3: number; deposited_land_m3: number; trapped_lake_m3: number; ocean_export_m3: number; boundary_export_m3: number };
+    ocean: { model: 'static_surface_gyres_v1'; mean_surface_temperature_c: number; mean_abs_anomaly_c: number; max_abs_anomaly_c: number };
   };
 }
 export interface MapResponse { map: WorldMap; meta: { generation_ms: number } }

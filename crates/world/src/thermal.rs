@@ -1,5 +1,5 @@
 //! Synthetic Earth-like temperature normals and radiation-limited evaporative
-//! demand. No measured weather, ocean-current heat transport or energy solver.
+//! demand. Ocean anomalies can adjust monthly air normals before PET is computed.
 use std::f64::consts::{PI, TAU};
 
 #[derive(Clone, Debug)]
@@ -45,6 +45,15 @@ impl ThermalProfile {
         let temperature_c = std::array::from_fn(|month| {
             mean_c + amplitude * (TAU * (month as f64 - 6.0) / 12.0).cos()
         });
+        Self::from_months(temperature_c, continentality, rain, solar)
+    }
+
+    pub fn from_months(
+        temperature_c: [f64; 12],
+        continentality: f64,
+        rain: &[f64; 12],
+        solar: &[f64; 12],
+    ) -> Self {
         let pet_mm = std::array::from_fn(|month| {
             // Daily temperature range is a synthetic proxy, NOT the annual
             // summer/winter range. Rain provides a bounded cloudiness proxy.
@@ -60,7 +69,7 @@ impl ThermalProfile {
                 * 30.0
         });
         Self {
-            mean_c,
+            mean_c: temperature_c.iter().sum::<f64>() / 12.0,
             continentality,
             temperature_c,
             pet_mm,

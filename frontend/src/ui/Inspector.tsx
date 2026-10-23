@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { number, percent, t } from '../i18n';
-import { latitudeAt, terrainColor } from '../map';
+import { terrainColor } from '../map';
 import type { Cell, Layer, ResourceKind, WorldMap } from '../types';
 import { ClimateChart, Gauge, ResourceRadar } from './Charts';
 import { WaterPanel } from './WaterPanel';
-import { GeologyPanel, SoilPanel, ConstructionPanel } from './EnvironmentPanel';
+import { GeologyPanel, SoilPanel, ConstructionPanel, GeographyPanel, OceanPanel } from './EnvironmentPanel';
 import { Icon } from './Icon';
 import { AnimatedNumber, locationKey } from './shared';
 
@@ -57,12 +57,12 @@ export function Inspector({ comparison, world, cell, month, layer, resource, onF
     );
   }
   const hasLand = cell.land_fraction > 0;
-  const lat = latitudeAt(world, cell.centroid.y);
+  const lat = cell.geography.latitude_deg;
   const latText = Math.round(Math.abs(lat)) === 0 ? t('map.equator') : t(lat > 0 ? 'map.latN' : 'map.latS', { value: number(Math.abs(lat), 1) });
   const metrics: Array<[string, number, (v: number) => string]> = [
     [t('inspector.elevation'), cell.elevation_m, (v) => t('unit.m', { value: number(Math.round(v)) })],
     [t('inspector.rainfall'), cell.rainfall_mm, (v) => t('unit.mm', { value: number(Math.round(v)) })],
-    [t('inspector.temperature'), cell.temperature_c, (v) => t('unit.celsius', { value: number(v, 1) })],
+    [t(hasLand ? 'inspector.temperature' : 'ocean.surfaceTemperature'), cell.temperature_c, (v) => t('unit.celsius', { value: number(v, 1) })],
     [t('inspector.landFraction'), cell.land_fraction, (v) => percent(v, 1)],
     [t('inspector.landShare'), cell.area / (world.width * world.height), (v) => percent(v, 2)],
     [t('inspector.lakeFraction'), cell.lake_fraction, (v) => percent(v, 1)],
@@ -92,6 +92,11 @@ export function Inspector({ comparison, world, cell, month, layer, resource, onF
             ))}
           </motion.div>
           {hasLand && <motion.p className="note" variants={section} custom={i++}>{t('inspector.meansNote')}</motion.p>}
+
+          <motion.section className="block" variants={section} custom={i++}><GeographyPanel cell={cell} /></motion.section>
+          {cell.ocean && <motion.section className="block" variants={section} custom={i++}>
+            <OceanPanel cell={cell} month={month} onMonth={m => onMonth(m, 'temperature')} />
+          </motion.section>}
 
           {hasLand ? <>
             <motion.section className="block" variants={section} custom={i++}>

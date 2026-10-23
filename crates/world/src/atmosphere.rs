@@ -54,7 +54,17 @@ struct Air {
     condensation: f64,
 }
 
+#[cfg(test)]
 pub(crate) fn generate(elevation: &[f64], cols: usize, rows: usize) -> Climate {
+    generate_with_ocean(elevation, cols, rows, None)
+}
+
+pub(crate) fn generate_with_ocean(
+    elevation: &[f64],
+    cols: usize,
+    rows: usize,
+    ocean: Option<&[crate::ocean::OceanProfile]>,
+) -> Climate {
     assert_eq!(elevation.len(), cols * rows);
     let land = land_fraction(elevation, cols, rows);
     let mut result = Climate {
@@ -130,7 +140,16 @@ pub(crate) fn generate(elevation: &[f64], cols: usize, rows: usize) -> Climate {
                             } else {
                                 1.0 - wind.south
                             };
-                            let source = (wind.capacity * wx * wy - vapor[id]).max(0.0) * 0.8;
+                            // A bounded relative saturation/evaporation proxy.
+                            // Colder seas supply less vapor; the existing source
+                            // ledger records the actual amount injected.
+                            let sea_factor = ocean.map_or(1.0, |sea| {
+                                (0.035 * (sea[id].surface_temperature_c[month] - 20.0))
+                                    .exp()
+                                    .clamp(0.45, 1.55)
+                            });
+                            let source =
+                                (wind.capacity * sea_factor * wx * wy - vapor[id]).max(0.0) * 0.8;
                             vapor[id] += source;
                             result.budget.months[month].evaporation_input += source;
                             depleted[id] = 0.0;
@@ -228,6 +247,34 @@ mod tests {
                 }
             })
             .collect()
+    }
+
+    #[test]
+    fn warmer_ocean_supplies_more_moisture_without_breaking_the_water_budget() {
+        let (cols, rows) = (64, 40);
+        let heights = continent(cols, rows);
+        let cold = vec![
+            crate::ocean::OceanProfile {
+                surface_temperature_c: [5.0; 12],
+                ..Default::default()
+            };
+            cols * rows
+        ];
+        let warm = vec![
+            crate::ocean::OceanProfile {
+                surface_temperature_c: [25.0; 12],
+                ..Default::default()
+            };
+            cols * rows
+        ];
+        let cold = generate_with_ocean(&heights, cols, rows, Some(&cold));
+        let warm = generate_with_ocean(&heights, cols, rows, Some(&warm));
+        check_budget(&cold);
+        check_budget(&warm);
+        let coastal = 10 * cols + cols * 7 / 8 - 1;
+        assert!(
+            warm.rain[coastal].iter().sum::<f64>() > cold.rain[coastal].iter().sum::<f64>() * 1.2
+        );
     }
 
     #[test]
