@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use voronoice::{BoundingBox, Point as VPoint, Voronoi, VoronoiBuilder};
 
+mod cartography;
 mod construction;
 mod environment;
 mod geology;

@@ -4,6 +4,7 @@ import { MapCamera, screenTransform } from './map-camera';
 import { RiverOverlay } from './river-overlay';
 import { displayRivers, riverAppearance } from './river-display';
 import { getThemeSnapshot } from './theme';
+import { effectiveMapStyle, naturalTerrainPaints, type MapStyle } from './map-style';
 
 /** Base night-atlas palette. Daylight colors keep the same terrain categories. */
 export const terrainColors: Record<Terrain, string> = {
@@ -120,6 +121,8 @@ function points(polygon: Point[]): string { return polygon.map((p) => `${p.x},${
 function hash(n: number): number { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
 const ease = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2);
 
+let mapViewSerial = 0;
+
 export class MapView {
   readonly element: SVGSVGElement;
   readonly camera = new MapCamera();
@@ -139,6 +142,12 @@ export class MapView {
   private month?: number;
   private layer: Layer = 'terrain';
   private resource: ResourceKind = 'iron';
+  private mapStyle: MapStyle = 'classic';
+  private appliedStyle?: MapStyle;
+  private naturalClipId = `natural-land-${++mapViewSerial}`;
+  private naturalClip = svg('clipPath', { id: this.naturalClipId, clipPathUnits: 'userSpaceOnUse' });
+  private natural = svg('g', { class: 'natural-map', 'pointer-events': 'none', display: 'none' });
+  private naturalPaints: Array<{ element: SVGElement; terrain: Terrain }> = [];
   private scene = svg('g');
   private graticule = svg('g', { 'pointer-events': 'none', class: 'graticule' });
   private polygons = svg('g', { class: 'cells' });
@@ -182,8 +191,8 @@ export class MapView {
     this.foreground.classList.add('map-selection-svg');
     this.borders.setAttribute('pointer-events', 'none');
     const definitions = svg('defs');
-    definitions.append(this.riverClip);
-    this.scene.append(definitions, this.polygons, this.symbols, this.borders, this.graticule, this.coastline, this.water);
+    definitions.append(this.riverClip, this.naturalClip);
+    this.scene.append(definitions, this.natural, this.polygons, this.symbols, this.borders, this.graticule, this.coastline, this.water);
     this.element.append(this.scene);
     this.foregroundScene.append(this.centers, this.hoverLayer, this.selection);
     this.foreground.append(this.foregroundScene);
@@ -332,6 +341,7 @@ export class MapView {
     this.camera.setWorld(world.width, world.height);
     this.paths = [];
     this.riverPaths = [];
+    this.appliedStyle = undefined;
     for (const group of [this.polygons, this.borders, this.symbols, this.coastline, this.water, this.riverClip, this.centers, this.selection, this.hoverLayer, this.graticule]) group.replaceChildren();
     const cx = world.width / 2, cy = world.height / 2;
     const reach = Math.hypot(cx, cy);
@@ -389,6 +399,8 @@ export class MapView {
       this.riverPaths.push({ path, river });
       this.water.append(path);
     }
+    this.buildNatural(world);
+    this.applyPresentation();
     this.updateRivers();
     // Use the actual final animation end, not a wall-clock timeout that can cut
     // off the reveal when rendering is delayed or the tab is in the background.
@@ -396,6 +408,70 @@ export class MapView {
     if (this.lastRevealCell) this.element.classList.add('revealing');
     this.reset();
     this.placeLabels();
+  }
+
+  private buildNatural(world: WorldMap): void {
+    this.natural.replaceChildren();
+    this.naturalClip.replaceChildren();
+    this.naturalPaints = [];
+    const surface = world.environment.natural_surface;
+    if (!surface || surface.version !== 1) return;
+    this.naturalClip.append(svg('path', { d: surface.land_path, 'clip-rule': 'evenodd' }));
+    const paint = (element: SVGElement, terrain: Terrain) => {
+      element.setAttribute('fill', terrainColor(terrain));
+      this.naturalPaints.push({ element, terrain });
+      return element;
+    };
+    this.natural.append(
+      paint(svg('rect', { width: String(world.width), height: String(world.height) }), 'deep_ocean'),
+      paint(svg('path', { d: surface.shallow_path, 'fill-rule': 'evenodd' }), 'shallow_sea'),
+    );
+    const land = svg('g', { 'clip-path': `url(#${this.naturalClipId})` });
+    land.append(paint(svg('path', { d: surface.land_path, 'fill-rule': 'evenodd' }), 'plains'));
+    for (const band of naturalTerrainPaints(world)) {
+      land.append(paint(svg('path', { d: band.path, 'fill-rule': 'evenodd' }), band.terrain));
+    }
+    this.natural.append(land,
+      svg('path', { d: surface.coast_path, class: 'natural-coast-halo' }),
+      svg('path', { d: surface.coast_path, class: 'natural-coast-line' }),
+    );
+  }
+
+  setMapStyle(style: MapStyle): void {
+    if (this.mapStyle !== style) {
+      this.element.classList.remove('revealing');
+      this.lastRevealCell = undefined;
+    }
+    this.mapStyle = style;
+    this.applyPresentation();
+  }
+
+  private applyPresentation(): void {
+    if (!this.world) return;
+    const style = effectiveMapStyle(this.mapStyle, this.layer, this.world);
+    const natural = style === 'natural';
+    this.element.dataset.mapStyle = this.foreground.dataset.mapStyle = style;
+    this.natural.setAttribute('display', natural ? '' : 'none');
+    this.coastline.setAttribute('display', natural ? 'none' : '');
+    this.symbols.setAttribute('display', this.layer === 'terrain' && !natural ? '' : 'none');
+    for (const paint of this.naturalPaints) paint.element.setAttribute('fill', terrainColor(paint.terrain));
+    if (this.appliedStyle !== style) {
+      this.riverClip.replaceChildren();
+      if (natural) {
+        this.riverClip.append(svg('path', { d: this.world.environment.natural_surface!.land_path, 'clip-rule': 'evenodd' }));
+        this.borders.setAttribute('clip-path', `url(#${this.naturalClipId})`);
+      } else {
+        for (const cell of this.world.cells) {
+          if (cell.is_land) this.riverClip.append(svg('polygon', { points: points(cell.polygon) }));
+        }
+        this.borders.removeAttribute('clip-path');
+      }
+      this.appliedStyle = style;
+    }
+    // Existing GPU masks use majority-land cells. Natural view deliberately
+    // uses the same SVG river network with the accurate natural land mask.
+    this.overlay.setVisible(this.waterVisible && !natural);
+    this.updateWater();
   }
 
   setLayer(layer: Layer, resource: ResourceKind): void {
@@ -408,7 +484,7 @@ export class MapView {
       polygon.setAttribute('fill', fill);
       polygon.style.setProperty('--cell-fill', fill);
     }
-    this.symbols.setAttribute('display', layer === 'terrain' ? '' : 'none');
+    this.applyPresentation();
   }
   setMonth(month?: number): void {
     this.month = month !== undefined && Number.isInteger(month) && month >= 0 && month < 12 ? month : undefined;
@@ -433,7 +509,7 @@ export class MapView {
   private updateWater(): void { this.water.setAttribute('display', this.waterVisible && !this.gpuActive ? '' : 'none'); }
   showWater(show: boolean): void {
     this.waterVisible = show;
-    this.overlay.setVisible(show);
+    this.overlay.setVisible(show && effectiveMapStyle(this.mapStyle, this.layer, this.world) !== 'natural');
     this.updateWater();
   }
 

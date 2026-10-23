@@ -1,4 +1,11 @@
 export const zhCN = {
+  'map.styleLabel': '地图表现',
+  'map.style.classic': '经典地块',
+  'map.style.natural': '自然地形',
+  'map.styleClassicNote': '整块着色 · 分区即操作单位',
+  'map.styleNaturalNote': '自然海岸与地形 · 点击仍选择治理分区',
+  'map.styleThematicNote': '专题仍按地块汇总；返回地形恢复自然底图。',
+  'map.styleUnavailable': '当前数据不含自然底图，已回退经典地块。',
   'comparison.title': '候选地比较',
   'comparison.count': '候选地 {value}/4',
   'comparison.add': '加入所选地块',
