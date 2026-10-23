@@ -1,4 +1,5 @@
 //! Natural geography is sampled independently of the governance tessellation.
+use crate::atmosphere;
 use crate::cartography::{self, NaturalSurface};
 use crate::construction::{self, KM_PER_MAP_UNIT, Site, WorldScale};
 use crate::geology::{Deposit, Geology, MineralOccurrence, Province};
@@ -28,11 +29,18 @@ pub struct SurfaceLayer {
     pub kind: &'static str,
     pub bands: Vec<SurfaceBand>,
 }
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+pub struct AtmosphereMonth {
+    pub evaporation_input: f64,
+    pub precipitation: f64,
+    pub boundary_export: f64,
+}
+#[derive(Clone, Debug, Default, Serialize, PartialEq)]
 pub struct AtmosphereBudget {
     pub evaporation_input: f64,
     pub precipitation: f64,
     pub boundary_export: f64,
+    pub months: [AtmosphereMonth; 12],
 }
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct Environment {
@@ -137,70 +145,6 @@ fn landform(elevation: f64, flatness: u8) -> &'static str {
     }
 }
 
-// Two opposed, steady moisture transports blended smoothly by latitude.
-// These are climatological proxies, not forecasts or a fluid solver.
-fn climate(
-    elevation: &[f64],
-    seed: u32,
-    cols: usize,
-    rows: usize,
-) -> (Vec<f64>, Vec<f64>, AtmosphereBudget) {
-    let texture = Simplex::new(seed ^ 0x745af);
-    let mut rainfall = vec![0.0; elevation.len()];
-    let mut shadow = vec![0.0; elevation.len()];
-    let mut budget = AtmosphereBudget {
-        evaporation_input: 0.0,
-        precipitation: 0.0,
-        boundary_export: 0.0,
-    };
-    for y in 0..rows {
-        let ny = (y as f64 + 0.5) / rows as f64;
-        let latitude = (ny - 0.5).abs() * 150.0;
-        let westerly = smooth(latitude, 20.0, 40.0);
-        let tropical = (-(latitude / 17.0).powi(2)).exp();
-        let subtropical = (-((latitude - 28.0) / 10.0).powi(2)).exp();
-        let temperate = (-((latitude - 50.0) / 15.0).powi(2)).exp();
-        let capacity = 2800.0 * (0.65 + 0.4 * latitude.to_radians().cos());
-        for (eastward, weight) in [(true, westerly), (false, 1.0 - westerly)] {
-            if weight == 0.0 {
-                continue;
-            }
-            let mut vapor = 0.0;
-            let mut previous = 0.0;
-            let mut barrier = 0.0f64;
-            for step in 0..cols {
-                let x = if eastward { step } else { cols - 1 - step };
-                let id = y * cols + x;
-                let h = elevation[id].max(0.0);
-                if elevation[id] <= 0.0 {
-                    let evaporated = (capacity - vapor).max(0.0) * 0.6;
-                    vapor += evaporated;
-                    budget.evaporation_input += evaporated * weight * 12.0;
-                    barrier = 0.0;
-                }
-                let uplift = (h - previous).max(0.0);
-                let regional = 1.0 + texture.get([x as f64 / cols as f64 * 3.0, ny * 2.0]) * 0.12;
-                let condensation = ((0.022 + tropical * 0.055 - subtropical * 0.012
-                    + temperate * 0.018
-                    + uplift / 1000.0 * 0.5)
-                    * regional)
-                    .clamp(0.005, 0.85);
-                let rain = vapor * condensation;
-                vapor -= rain;
-                rainfall[id] += rain * weight * 12.0;
-                budget.precipitation += rain * weight * 12.0;
-                if h > 0.0 && barrier > h + 350.0 {
-                    shadow[id] += (1.0 - vapor / capacity).clamp(0.0, 1.0) * weight;
-                }
-                barrier = (barrier - 25.0).max(h);
-                previous = h;
-            }
-            budget.boundary_export += vapor * weight * 12.0;
-        }
-    }
-    (rainfall, shadow, budget)
-}
-
 impl Field {
     pub fn generate(seed: u64, land_ratio: f64) -> Self {
         let continental = Simplex::new(seed as u32);
@@ -246,7 +190,15 @@ impl Field {
                     .round()
             })
             .collect();
-        let (rain, shadow, atmosphere_budget) = climate(&elevation, seed as u32, COLS, ROWS);
+        let atmosphere::Climate {
+            rain: monthly_rain,
+            shadow,
+            budget: atmosphere_budget,
+        } = atmosphere::generate(&elevation, COLS, ROWS);
+        let rain: Vec<f64> = monthly_rain
+            .iter()
+            .map(|months| months.iter().sum())
+            .collect();
         let temperature: Vec<f64> = elevation
             .iter()
             .enumerate()
@@ -285,7 +237,7 @@ impl Field {
                     let capacity = capacities[id];
                     let mut profile = seasonal::normals(
                         temperature[id],
-                        rain[id],
+                        &monthly_rain[id],
                         latitude,
                         continentality,
                         capacity,
@@ -1135,21 +1087,48 @@ mod tests {
         assert!(local_flatness(&hills, 12, 5, 5) < 30);
     }
 
+    /// Equal-area natural samples, not counts of differently sized Voronoi cells.
+    /// Manual audit only: dry-area quotas are not rules of world generation.
     #[test]
-    fn moisture_budget_balances_and_mountain_has_directional_rain_shadow() {
-        let (cols, rows) = (96, 60);
-        let mut elevation = vec![-100.0; cols * rows];
-        for y in 0..rows {
-            for x in 12..94 {
-                elevation[y * cols + x] = if (35..40).contains(&x) { 2500.0 } else { 100.0 };
-            }
+    #[ignore = "multi-seed climate quality report"]
+    fn climate_quality_report() {
+        for (seed, ratio) in [
+            ("4248287756", 0.4),
+            ("经纶·山河初定", 0.45),
+            ("海陆交错", 0.45),
+            ("内陆大陆", 0.8),
+            ("群岛", 0.2),
+        ] {
+            let start = std::time::Instant::now();
+            let field = Field::generate(crate::hash_seed(seed), ratio);
+            let land: Vec<_> = field
+                .samples
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| s.elevation > 0.0)
+                .collect();
+            let low: Vec<_> = land
+                .iter()
+                .filter(|(id, _)| {
+                    let lat = (0.5 - ((*id / COLS) as f64 + 0.5) / ROWS as f64) * 150.0;
+                    lat.abs() < 15.0
+                })
+                .collect();
+            let dry = |s: &Sample| s.rain / s.pet < 0.2;
+            let dry_land =
+                land.iter().filter(|(_, s)| dry(s)).count() as f64 / land.len() as f64 * 100.0;
+            let dry_low =
+                low.iter().filter(|(_, s)| dry(s)).count() as f64 / low.len() as f64 * 100.0;
+            let rain = land.iter().map(|(_, s)| s.rain).sum::<f64>() / land.len() as f64;
+            let maximum = land.iter().map(|(_, s)| s.rain).fold(0.0, f64::max);
+            let b = &field.atmosphere_budget;
+            let error = (b.evaporation_input - b.precipitation - b.boundary_export).abs()
+                / b.evaporation_input.max(1.0);
+            assert!(error < 1e-9);
+            println!(
+                "{seed}: land={ratio}, dry={dry_land:.1}%, equatorial_dry={dry_low:.1}%, rain={rain:.0}mm, max={maximum:.0}mm, budget_error={error:.2e}, time={:.0}ms",
+                start.elapsed().as_secs_f64() * 1000.0
+            );
         }
-        let (rain, _, budget) = climate(&elevation, 123, cols, rows);
-        let y = 10; // Mid-latitude, predominantly westerly transport.
-        assert!(rain[y * cols + 35] > rain[y * cols + 45]);
-        assert!(
-            (budget.evaporation_input - budget.precipitation - budget.boundary_export).abs()
-                < budget.evaporation_input * 1e-10
-        );
     }
 }

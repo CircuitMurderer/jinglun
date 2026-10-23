@@ -125,7 +125,7 @@ impl ClimateProfile {
 
 pub(crate) fn normals(
     mean_c: f64,
-    annual_rain: f64,
+    monthly_rain: &[f64; 12],
     latitude: f64,
     continentality: f64,
     capacity: f64,
@@ -135,30 +135,15 @@ pub(crate) fn normals(
         ..ClimateProfile::default()
     };
     let signed_latitude = latitude.to_radians().sin();
-    let equatorial = (-(latitude / 14.0).powi(2)).exp();
-    let subtropical = (-((latitude.abs() - 30.0) / 12.0).powi(2)).exp();
-    let mut weights = [0.0; 12];
-    for (month, weight) in weights.iter_mut().enumerate() {
+    for (month, m) in result.months.iter_mut().enumerate() {
         let season = (TAU * (month as f64 - 6.0) / 12.0).cos();
-        // The signed latitude reverses hemispheres continuously at the equator.
-        let local_summer = season * (latitude / 12.0).tanh();
-        result.months[month].temperature_c =
-            mean_c + 22.0 * signed_latitude * (0.35 + 0.65 * continentality) * season;
-        *weight = (1.0
-            + local_summer
-                * (1.0 - equatorial)
-                * (0.65 * (0.3 + 0.7 * continentality)
-                    - 0.35 * subtropical * (1.0 - continentality))
-            + equatorial * 0.35 * (TAU * 2.0 * (month as f64 - 3.0) / 12.0).cos())
-        .max(0.1);
-        let m = &mut result.months[month];
+        m.temperature_c = mean_c + 22.0 * signed_latitude * (0.35 + 0.65 * continentality) * season;
         m.potential_evapotranspiration_mm = (25.0 + (m.temperature_c + 5.0).max(0.0) * 3.0)
             * (1.0 + 0.65 * signed_latitude * season);
     }
-    let total: f64 = weights.iter().sum();
     let mut melt_capacity = [0.0; 12];
     for (month, m) in result.months.iter_mut().enumerate() {
-        m.precipitation_mm = annual_rain * weights[month] / total;
+        m.precipitation_mm = monthly_rain[month];
         m.snowfall_mm = m.precipitation_mm * ((2.0 - m.temperature_c) / 4.0).clamp(0.0, 1.0);
         // A bounded degree-day proxy, 1.5 mm / °C / day over 30 model days.
         melt_capacity[month] = m.temperature_c.max(0.0) * 45.0;
@@ -227,6 +212,18 @@ pub(crate) fn normals(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transported_monthly_rain_is_preserved_in_the_land_water_model() {
+        let rain = [
+            5.0, 10.0, 25.0, 80.0, 160.0, 300.0, 350.0, 250.0, 100.0, 30.0, 10.0, 5.0,
+        ];
+        let p = normals(20.0, &rain, 28.0, 0.4, 150.0);
+        for (month, expected) in p.months.iter().zip(rain) {
+            assert_eq!(month.precipitation_mm, expected);
+        }
+        check_budget(&p);
+    }
     fn check_budget(p: &ClimateProfile) {
         let w = p.water();
         assert!(
@@ -245,9 +242,9 @@ mod tests {
     }
     #[test]
     fn hemispheres_reverse_seasons_coast_buffers_temperature_and_annual_rain_is_preserved() {
-        let north = normals(10.0, 900.0, 45.0, 0.9, 160.0);
-        let south = normals(10.0, 900.0, -45.0, 0.9, 160.0);
-        let coast = normals(10.0, 900.0, 45.0, 0.05, 160.0);
+        let north = normals(10.0, &[900.0 / 12.0; 12], 45.0, 0.9, 160.0);
+        let south = normals(10.0, &[900.0 / 12.0; 12], -45.0, 0.9, 160.0);
+        let coast = normals(10.0, &[900.0 / 12.0; 12], 45.0, 0.05, 160.0);
         assert!(north.months[6].temperature_c > north.months[0].temperature_c);
         for month in 0..12 {
             assert!(
@@ -270,7 +267,7 @@ mod tests {
     }
     #[test]
     fn winter_snow_is_stored_until_thaw_and_perennial_accumulation_is_accounted_for() {
-        let seasonal = normals(3.0, 1200.0, 55.0, 0.8, 150.0);
+        let seasonal = normals(3.0, &[1200.0 / 12.0; 12], 55.0, 0.8, 150.0);
         assert!(seasonal.months[0].snowfall_mm > 0.0);
         assert_eq!(seasonal.months[0].snowmelt_mm, 0.0);
         assert!(
@@ -280,7 +277,7 @@ mod tests {
                 .any(|m| m.snowmelt_mm > m.precipitation_mm)
         );
         assert!(seasonal.snow_storage_change_mm.abs() < 1e-8);
-        let frozen = normals(-30.0, 400.0, 70.0, 0.8, 150.0);
+        let frozen = normals(-30.0, &[400.0 / 12.0; 12], 70.0, 0.8, 150.0);
         assert!((frozen.snow_storage_change_mm - 400.0).abs() < 1e-8);
         assert_eq!(frozen.water().runoff, 0.0);
         check_budget(&seasonal);
@@ -288,10 +285,10 @@ mod tests {
     }
     #[test]
     fn drought_and_short_summers_constrain_growth_and_soil_stores_buffer_dry_months() {
-        let humid = normals(20.0, 1800.0, 30.0, 0.6, 180.0);
-        let dry = normals(20.0, 60.0, 30.0, 0.6, 180.0);
-        let cold = normals(-8.0, 900.0, 60.0, 0.9, 180.0);
-        let seasonal_soil = normals(15.0, 900.0, 45.0, 0.8, 180.0);
+        let humid = normals(20.0, &[1800.0 / 12.0; 12], 30.0, 0.6, 180.0);
+        let dry = normals(20.0, &[60.0 / 12.0; 12], 30.0, 0.6, 180.0);
+        let cold = normals(-8.0, &[900.0 / 12.0; 12], 60.0, 0.9, 180.0);
+        let seasonal_soil = normals(15.0, &[900.0 / 12.0; 12], 45.0, 0.8, 180.0);
         assert!(humid.rainfed_months > dry.rainfed_months);
         assert!(humid.crop_opportunity().0 > dry.crop_opportunity().0);
         assert!(cold.growing_months < humid.growing_months);
@@ -308,7 +305,7 @@ mod tests {
             &dry,
             &cold,
             &seasonal_soil,
-            &normals(25.0, 0.0, 0.0, 0.0, 100.0),
+            &normals(25.0, &[0.0; 12], 0.0, 0.0, 100.0),
         ] {
             check_budget(p);
         }

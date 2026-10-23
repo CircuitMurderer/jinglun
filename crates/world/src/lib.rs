@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use voronoice::{BoundingBox, Point as VPoint, Voronoi, VoronoiBuilder};
 
+mod atmosphere;
 mod cartography;
 mod construction;
 mod environment;
@@ -18,7 +19,7 @@ pub use environment::Environment;
 pub use seasonal::ClimateProfile;
 pub use water::GroundProfile;
 
-pub const GENERATOR_VERSION: &str = "0.6.0";
+pub const GENERATOR_VERSION: &str = "0.7.0";
 pub const WIDTH: f64 = 1600.0;
 pub const HEIGHT: f64 = 1000.0;
 

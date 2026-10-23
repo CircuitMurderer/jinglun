@@ -183,7 +183,7 @@ mod tests {
     use super::*;
     #[test]
     fn high_flat_land_remains_buildable_and_water_crossing_is_not_an_open_road() {
-        let profile = crate::seasonal::normals(12.0, 800.0, 30.0, 0.5, 100.0);
+        let profile = crate::seasonal::normals(12.0, &[800.0 / 12.0; 12], 30.0, 0.5, 100.0);
         let high = site(
             90, false, 1800.0, &profile, 10, 200.0, 100.0, 60, 1.0, false,
         );

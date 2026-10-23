@@ -176,8 +176,10 @@ mod tests {
             })
             .collect();
         let geology = crate::geology::Geology::generate(42, &elevation, cols, rows, 1.0);
-        let profiles =
-            vec![crate::seasonal::normals(15.0, 1000.0, 30.0, 0.5, 100.0); elevation.len()];
+        let profiles = vec![
+            crate::seasonal::normals(15.0, &[1000.0 / 12.0; 12], 30.0, 0.5, 100.0);
+            elevation.len()
+        ];
         let d = crate::hydrology::drain(&elevation, &profiles, cols, rows);
         let flatness: Vec<_> = (0..elevation.len())
             .map(|i| if i % cols < 5 { 10 } else { 95 })
