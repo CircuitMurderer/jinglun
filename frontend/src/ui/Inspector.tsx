@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { number, percent, t } from '../i18n';
 import { latitudeAt, terrainColor } from '../map';
@@ -9,6 +10,7 @@ import { Icon } from './Icon';
 import { AnimatedNumber, locationKey } from './shared';
 
 interface Props {
+  comparison?: ReactNode;
   world?: WorldMap;
   cell?: Cell;
   month?: number;
@@ -43,10 +45,11 @@ const section = {
   show: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.04 * i, duration: 0.35, ease: [0.2, 0.7, 0.2, 1] as const } }),
 };
 
-export function Inspector({ world, cell, month, layer, resource, onFocus, onPreview, onMonth, onResource }: Props) {
+export function Inspector({ comparison, world, cell, month, layer, resource, onFocus, onPreview, onMonth, onResource }: Props) {
   if (!world || !cell) {
     return (
       <div className="panel-scroll inspector-empty">
+        {comparison}
         <Icon name="compass" size={42} />
         <h3>{t('inspector.emptyTitle')}</h3>
         <p>{t('inspector.emptyDescription')}</p>
@@ -67,6 +70,7 @@ export function Inspector({ world, cell, month, layer, resource, onFocus, onPrev
   let i = 0;
   return (
     <div className="panel-scroll">
+      {comparison}
       <AnimatePresence mode="wait" initial={false}>
         <motion.div key={cell.id} initial="hidden" animate="show" exit={{ opacity: 0, x: 16, transition: { duration: 0.12 } }}>
           <motion.header className="cell-hero" variants={section} custom={i++}>
