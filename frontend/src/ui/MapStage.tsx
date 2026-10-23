@@ -169,6 +169,7 @@ function Legend({ world, layer, resource, month }: { world?: WorldMap; layer: La
         <motion.strong key={title} className="legend-title" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.18 }}>{title}</motion.strong>
       </AnimatePresence>
       <div className="legend-ramp" style={{ background: legendGradient(layer) }} />
+      {layer === 'water' && <p className="note">{t('water.mapNote', { period: month === undefined ? t('climate.annual') : t('climate.month', { value: month + 1 }) })}</p>}
       <div className="legend-labels"><span>{t(low)}</span><span>{t(monthly && layer === 'rainfall' ? 'legend.monthRainfallUpper' : high)}</span></div>
     </div>
   );
@@ -299,6 +300,7 @@ export function MapStage({ world, layer, resource, month, toggles, status, error
 
       <div className="hud hud-top-left">
         <Legend world={world} layer={layer} resource={resource} month={month} />
+        {toggles.water && <div className="readout glass">{t('water.riverPeriod', { period: month === undefined ? t('climate.annual') : t('climate.month', { value: month + 1 }) })}</div>}
         <div className="readout glass">
           <span ref={zoomLabel}>{t('map.zoom', { value: percent(1) })}</span>
           <span ref={cursorLabel}>{t('map.cursorIdle')}</span>

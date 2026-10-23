@@ -111,10 +111,11 @@ export function App() {
     viewRef.current?.preview(id);
   }, []);
 
-  const handlePickMonth = useCallback((m: number) => {
+  const handlePickMonth = useCallback((m: number, targetLayer?: Layer) => {
     setPlaying(false);
     setMonth(m);
-    if (!isClimateLayer(layer)) setLayer('temperature');
+    if (targetLayer) setLayer(targetLayer);
+    else if (!isClimateLayer(layer)) setLayer('temperature');
   }, [layer]);
 
   const handlePickResource = useCallback((kind: ResourceKind) => {

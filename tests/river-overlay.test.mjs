@@ -16,7 +16,7 @@ function setup(create) {
   const overlay = new RiverOverlay(host, () => {}, async () => {
     ++loads;
     return { createRiverRenderer: async (world, view, host, onFailure) => {
-      const renderer = { destroyed: 0, views: [], setView(next) { this.views.push(next); }, destroy() { ++this.destroyed; } };
+      const renderer = { destroyed: 0, views: [], months: [], setMonth(next) { this.months.push(next); }, setView(next) { this.views.push(next); }, destroy() { ++this.destroyed; } };
       const call = { world, view, host, onFailure, renderer };
       calls.push(call);
       renderers.push(renderer);
@@ -119,4 +119,23 @@ test('rendering errors release GPU resources and preserve fallback state', async
   ctx.overlay.setView({ scale: 2 });
   assert.equal(ctx.host.dataset.riverRenderer, 'fallback');
   assert.equal(ctx.renderers[0].destroyed, 1);
+});
+
+test('month selected while GPU initializes is applied on arrival and survives re-enable', async () => {
+  const gate = deferred();
+  const ctx = setup(async ({ renderer }) => { await gate.promise; return renderer; });
+  ctx.overlay.setVisible(true);
+  await flush();
+  ctx.overlay.setMonth(7);
+  gate.resolve();
+  await flush();
+  assert.equal(ctx.renderers[0].months.at(-1), 7);
+  ctx.overlay.setMonth(0);
+  assert.equal(ctx.renderers[0].months.at(-1), 0);
+  ctx.overlay.setVisible(false);
+  ctx.overlay.setMonth(undefined);
+  ctx.overlay.setVisible(true);
+  await flush();
+  assert.equal(ctx.renderers[1].months.at(-1), undefined);
+  ctx.overlay.destroy();
 });

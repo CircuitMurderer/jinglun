@@ -2244,3 +2244,10 @@ button:disabled {
     transition-duration: 0.01ms !important;
   }
 }
+
+.water-month { padding: 0; color: var(--accent-cyan); font: inherit; cursor: pointer; }
+.water-sources > .lake-card { margin-top: 12px; }
+.water-sources .climate-summary strong { overflow-wrap: anywhere; }
+.water-metrics > div { flex-direction: column; align-items: flex-start; gap: 5px; }
+.water-metrics strong { white-space: nowrap; }
+.legend .note { max-width: 260px; margin: 6px 0 0; font-size: 10px; }

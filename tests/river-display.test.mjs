@@ -49,3 +49,12 @@ test('handles empty data and does not traverse a malformed cyclic network', () =
   const cyclic = [river(0, [[0, 0], [1, 0]]), river(1, [[1, 0], [0, 0]])];
   assert.deepEqual(ids(selectMainRivers(cyclic, 10)), [0, 1]);
 });
+
+test('monthly river styling shares a stable intensity scale and hides actual zero flow', async () => {
+  const { riverAppearance } = await import('../frontend/src/river-display.ts');
+  const river = { flow_index: 30, annual_flow: 120, monthly_flow_index: [0, 15, 60], monthly_flow: [0, 5, 20] };
+  assert.equal(riverAppearance(river, 0).visible, false);
+  assert.ok(riverAppearance(river, 2).width > riverAppearance(river, 1).width);
+  assert.ok(riverAppearance(river, 2).alpha > riverAppearance(river, 1).alpha);
+  assert.ok(riverAppearance(river).visible);
+});

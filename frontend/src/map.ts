@@ -2,7 +2,7 @@ import type { Cell, Layer, Point, ResourceKind, Terrain, WorldMap } from './type
 import { t } from './i18n';
 import { MapCamera, screenTransform } from './map-camera';
 import { RiverOverlay } from './river-overlay';
-import { displayRivers } from './river-display';
+import { displayRivers, riverAppearance } from './river-display';
 import { getThemeSnapshot } from './theme';
 
 /** Base night-atlas palette. Daylight colors keep the same terrain categories. */
@@ -141,6 +141,7 @@ export class MapView {
   private water = svg('g', { 'pointer-events': 'none', class: 'water-network', 'clip-path': 'url(#river-land-clip)', display: 'none' });
   private riverClip = svg('clipPath', { id: 'river-land-clip', clipPathUnits: 'userSpaceOnUse' });
   private paths: SVGPolygonElement[] = [];
+  private riverPaths: Array<{ path: SVGPathElement; river: WorldMap['environment']['rivers'][number] }> = [];
   private latitudeLabels: Array<{ y: number; element: HTMLSpanElement }> = [];
   private drag?: { x: number; y: number; tx: number; ty: number; moved: boolean; pointerId: number };
   private suppressClick = false;
@@ -320,6 +321,7 @@ export class MapView {
     this.overlay.setWorld(world);
     this.camera.setWorld(world.width, world.height);
     this.paths = [];
+    this.riverPaths = [];
     for (const group of [this.polygons, this.borders, this.symbols, this.coastline, this.water, this.riverClip, this.centers, this.selection, this.hoverLayer, this.graticule]) group.replaceChildren();
     const cx = world.width / 2, cy = world.height / 2;
     const reach = Math.hypot(cx, cy);
@@ -368,13 +370,16 @@ export class MapView {
     }
     // Rivers remain an optional line overlay; lake areas use the cell's dominant terrain.
     for (const river of displayRivers(world)) {
-      this.water.append(svg('path', {
+      const path = svg('path', {
         d: river.points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' '),
         fill: 'none', stroke: '#5fd0ff', 'stroke-opacity': '0.9', 'stroke-width': String(0.55 + river.flow_index / 100 * 1.25),
         'vector-effect': 'non-scaling-stroke',
         'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'data-river': String(river.id),
-      }));
+      });
+      this.riverPaths.push({ path, river });
+      this.water.append(path);
     }
+    this.updateRivers();
     // Use the actual final animation end, not a wall-clock timeout that can cut
     // off the reveal when rendering is delayed or the tab is in the background.
     void this.element.getBoundingClientRect();
@@ -398,6 +403,16 @@ export class MapView {
   setMonth(month?: number): void {
     this.month = month !== undefined && Number.isInteger(month) && month >= 0 && month < 12 ? month : undefined;
     this.setLayer(this.layer, this.resource);
+    this.updateRivers();
+  }
+  private updateRivers(): void {
+    for (const { path, river } of this.riverPaths) {
+      const appearance = riverAppearance(river, this.month);
+      path.setAttribute('stroke-width', String(appearance.width));
+      path.setAttribute('stroke-opacity', String(appearance.alpha));
+      path.setAttribute('display', appearance.visible ? '' : 'none');
+    }
+    this.overlay.setMonth(this.month);
   }
   showBorders(show: boolean): void { this.borders.setAttribute('display', show ? '' : 'none'); }
   showCenters(show: boolean): void { this.centers.setAttribute('display', show ? '' : 'none'); }

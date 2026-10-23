@@ -1,6 +1,12 @@
 import type { Point, WorldMap } from './types';
 
 type River = WorldMap['environment']['rivers'][number];
+/** Rust provides intensity; both backends use identical cartographic styling. */
+export function riverAppearance(river: River, month?: number) {
+  const intensity = month === undefined ? river.flow_index : river.monthly_flow_index[month];
+  const flow = month === undefined ? river.annual_flow : river.monthly_flow[month];
+  return { width: 0.55 + intensity / 100 * 1.25, alpha: 0.45 + intensity / 100 * 0.45, visible: flow > 1e-8 };
+}
 const key = (point: Point): string => `${point.x},${point.y}`;
 
 /** Cartographic pruning only: retained rivers keep their exact Rust geometry. */

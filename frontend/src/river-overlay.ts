@@ -3,6 +3,7 @@ import type { WorldMap } from './types';
 
 export interface RiverRenderer {
   setView(view: Readonly<MapViewState>): void;
+  setMonth(month?: number): void;
   destroy(): void;
 }
 
@@ -13,6 +14,7 @@ type Status = 'off' | 'loading' | 'gpu' | 'fallback';
 /** Lazy GPU enhancement. SVG stays usable while loading or after any failure. */
 export class RiverOverlay {
   private world?: WorldMap;
+  private month?: number;
   private view?: Readonly<MapViewState>;
   private renderer?: RiverRenderer;
   private visible = false;
@@ -55,6 +57,12 @@ export class RiverOverlay {
     catch { this.fallback(); }
   }
 
+  setMonth(month?: number): void {
+    this.month = month;
+    try { this.renderer?.setMonth(month); }
+    catch { this.fallback(); }
+  }
+
   private load(): Promise<void> {
     if (!this.world || !this.view || this.disposed) return Promise.resolve();
     const revision = ++this.revision;
@@ -74,6 +82,7 @@ export class RiverOverlay {
         });
         if (!current()) { renderer.destroy(); return; }
         renderer.setView(this.view!);
+        renderer.setMonth(this.month);
         this.renderer = renderer;
         this.status('gpu');
       } catch (error) {

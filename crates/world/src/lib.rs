@@ -8,10 +8,12 @@ mod environment;
 mod hydrology;
 mod lakes;
 mod seasonal;
+mod water;
 pub use environment::Environment;
 pub use seasonal::ClimateProfile;
+pub use water::GroundProfile;
 
-pub const GENERATOR_VERSION: &str = "0.4.0";
+pub const GENERATOR_VERSION: &str = "0.5.0";
 pub const WIDTH: f64 = 1600.0;
 pub const HEIGHT: f64 = 1000.0;
 
@@ -122,6 +124,8 @@ pub struct Cell {
     pub lake_fraction: f64,
     pub endorheic_land_fraction: f64,
     pub lake_ids: Vec<usize>,
+    pub water_source_ids: Vec<usize>,
+    pub groundwater: GroundProfile,
     pub landform: &'static str,
     pub thermal_zone: &'static str,
     pub moisture_zone: &'static str,
@@ -298,6 +302,8 @@ pub fn generate(config: MapConfig) -> Result<WorldMap, GenerationError> {
                 rainfall_mm: 0,
                 temperature_c: 0.0,
                 climate: ClimateProfile::default(),
+                groundwater: GroundProfile::default(),
+                water_source_ids: vec![],
                 land_fraction: 0.0,
                 lake_fraction: 0.0,
                 endorheic_land_fraction: 0.0,
@@ -439,7 +445,19 @@ mod tests {
         let w = &a.environment.water_budget;
         for month in &w.months {
             assert!(
-                (month.generated_runoff
+                (month.groundwater_recharge + month.lake_seepage
+                    - month.groundwater_baseflow
+                    - month.groundwater_storage_change)
+                    .abs()
+                    < month.groundwater_recharge.max(1.0) * 1e-8
+            );
+            assert!(
+                (month.salt_input - month.salt_export - month.salt_storage_change).abs()
+                    < month.salt_input.max(1.0) * 1e-7
+            );
+            assert!(
+                (month.generated_runoff + month.groundwater_baseflow
+                    - month.lake_seepage
                     - month.lake_evaporation
                     - month.ocean_outflow
                     - month.boundary_outflow
@@ -449,6 +467,13 @@ mod tests {
             );
         }
         for cell in &a.cells {
+            assert!(
+                cell.water_source_ids.iter().all(|id| a
+                    .environment
+                    .water_sources
+                    .iter()
+                    .any(|s| s.id == *id))
+            );
             assert!((0.0..=1.0).contains(&cell.endorheic_land_fraction));
             assert!(
                 cell.lake_ids
@@ -456,8 +481,21 @@ mod tests {
                     .all(|&id| id < a.environment.lakes.len())
             );
         }
+        for m in 0..12 {
+            let assigned: f64 = a
+                .environment
+                .water_sources
+                .iter()
+                .map(|s| s.months[m].planning_ceiling)
+                .sum();
+            assert!(
+                (assigned - (w.months[m].ocean_outflow + w.months[m].boundary_outflow) * 0.3).abs()
+                    < 1e-6
+            );
+        }
         assert!(
-            (w.generated_runoff
+            (w.generated_runoff + w.groundwater_baseflow
+                - w.lake_seepage
                 - w.lake_evaporation
                 - w.ocean_outflow
                 - w.boundary_outflow
@@ -554,7 +592,8 @@ mod tests {
                 - budget.soil_storage_change;
             assert!(residual.abs() < budget.land_precipitation.max(1.0) * 1e-10);
             assert!(
-                (budget.generated_runoff
+                (budget.generated_runoff + budget.groundwater_baseflow
+                    - budget.lake_seepage
                     - budget.lake_evaporation
                     - budget.ocean_outflow
                     - budget.boundary_outflow

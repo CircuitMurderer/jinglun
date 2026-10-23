@@ -17,6 +17,16 @@ export interface ClimateProfile {
   continentality: number; growing_months: number; rainfed_months: number; cold_months: number;
   snow_storage_change_mm: number; soil_storage_change_mm: number;
 }
+export interface GroundMonth {
+  recharge_mm: number; seepage_mm: number; baseflow_mm: number;
+  storage_mm: number; storage_change_mm: number; tds_mg_l: number;
+}
+export type WaterQuality = 'dry' | 'fresh' | 'brackish' | 'saline';
+export interface SourceMonth {
+  natural_outflow: number; ecological_reserve: number; planning_ceiling: number;
+  freshwater_ceiling: number; tds_mg_l: number; quality: WaterQuality;
+}
+export interface WaterSource { id: number; outlet: 'ocean' | 'boundary' | 'closed_basin'; months: SourceMonth[] }
 export type ResourceKind = 'grain' | 'livestock' | 'fiber' | 'timber' | 'stone' | 'coal' | 'iron' | 'oil' | 'rare_earth' | 'freshwater';
 export interface Resource { kind: ResourceKind; potential: number }
 export interface Cell {
@@ -37,6 +47,8 @@ export interface Cell {
   lake_fraction: number;
   endorheic_land_fraction: number;
   lake_ids: number[];
+  water_source_ids: number[];
+  groundwater: { initial_storage_mm: number; initial_tds_mg_l: number; months: GroundMonth[] };
   landform: 'ocean' | 'lowland' | 'plateau' | 'hills' | 'mountains';
   thermal_zone: 'cold' | 'temperate' | 'warm';
   moisture_zone: 'arid' | 'semi_arid' | 'subhumid' | 'humid';
@@ -58,6 +70,7 @@ export interface Edge {
 export interface LakeMonth {
   inflow: number; evaporation: number; overflow: number; storage_change: number;
   storage: number; water_level_m: number;
+  seepage: number; tds_mg_l: number; salt_storage: number; quality: WaterQuality;
 }
 export interface Basin {
   id: number; kind: 'dry' | 'closed' | 'seasonal' | 'overflow';
@@ -83,9 +96,10 @@ export interface WorldMap {
     terrain_palette: Terrain[];
     layers: Array<{kind: Exclude<Layer, 'resources' | 'temperature'>; bands: Array<{value: number; path: string}>}>;
     coast_path: string;
-    rivers: Array<{id: number; points: Point[]; flow_index: number; basin_id: number; outlet: 'junction' | 'ocean' | 'lake' | 'boundary' | 'closed_basin'; annual_flow: number; monthly_flow: number[]}>;
+    rivers: Array<{id: number; points: Point[]; flow_index: number; basin_id: number; outlet: 'junction' | 'ocean' | 'lake' | 'boundary' | 'closed_basin'; annual_flow: number; monthly_flow: number[]; monthly_flow_index: number[]}>;
     lakes: Array<{id: number; path: string; area_fraction: number; spill_elevation_m: number; basin_id: number}>;
     basins: Basin[];
+    water_sources: WaterSource[];
   };
 }
 export interface MapResponse { map: WorldMap; meta: { generation_ms: number } }

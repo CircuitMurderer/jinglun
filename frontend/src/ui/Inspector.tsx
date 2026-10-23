@@ -3,6 +3,7 @@ import { number, percent, t } from '../i18n';
 import { latitudeAt, terrainColor } from '../map';
 import type { Cell, Layer, ResourceKind, WorldMap } from '../types';
 import { ClimateChart, Gauge, ResourceRadar } from './Charts';
+import { WaterPanel } from './WaterPanel';
 import { Icon } from './Icon';
 import { AnimatedNumber, locationKey } from './shared';
 
@@ -14,7 +15,7 @@ interface Props {
   resource: ResourceKind;
   onFocus: (id: number, zoom?: boolean) => void;
   onPreview: (id?: number) => void;
-  onMonth: (month: number) => void;
+  onMonth: (month: number, layer?: Layer) => void;
   onResource: (kind: ResourceKind) => void;
 }
 
@@ -112,21 +113,27 @@ export function Inspector({ world, cell, month, layer, resource, onFocus, onPrev
                 const level = period.reduce((sum, m) => sum + m.water_level_m, 0) / period.length;
                 const storage = period.reduce((sum, m) => sum + m.storage, 0) / period.length;
                 return <div className="lake-card" key={id}>
-                  <div className="chips"><span>{t('hydrology.lake', { value: id + 1 })}</span><span>{t(`hydrology.kind.${basin.kind}`)}</span><span>{month === undefined ? t('climate.annual') : t('climate.month', { value: month + 1 })}</span></div>
-                  <div className="climate-summary">
+                  <div className="chips"><span>{t('hydrology.lake', { value: id + 1 })}</span><span>{t(`hydrology.kind.${basin.kind}`)}</span><span>{month === undefined ? t('climate.annual') : t('climate.month', { value: month + 1 })}</span>{[...new Set(period.map(m => m.quality))].map(quality => <span key={quality}>{t(quality === 'dry' ? 'hydrology.kind.dry' : `water.quality.${quality}`)}</span>)}</div>
+                  <div className="climate-summary water-metrics">
                     <div><span>{t(month === undefined ? 'hydrology.meanLevel' : 'hydrology.level')}</span><strong>{t('unit.m', { value: number(level, 1) })}</strong></div>
                     <div><span>{t('hydrology.storage')}</span><strong>{percent(storage / Math.max(1, basin.capacity), 1)}</strong></div>
+                    <div><span>{t('water.tdsUnitTitle')}</span><strong>{storage > 1e-8 ? number(period.reduce((sum, m) => sum + m.tds_mg_l * m.storage, 0) / period.reduce((sum, m) => sum + m.storage, 0)) : '—'}</strong></div>
+                    <div><span>{t('water.lakeSeepage')}</span><strong>{number(period.reduce((sum, m) => sum + m.seepage, 0))}</strong></div>
                   </div>
                   <details className="climate-table-wrap"><summary>{t('hydrology.showMonths')}</summary>
                     <table className="climate-table"><caption>{t('hydrology.tableNote')}</caption>
-                      <thead><tr><th>{t('climate.monthHeader')}</th><th>{t('hydrology.level')}</th><th>{t('hydrology.storage')}</th><th>{t('hydrology.spill')}</th></tr></thead>
+                      <thead><tr><th>{t('climate.monthHeader')}</th><th>{t('hydrology.level')}</th><th>{t('hydrology.storage')}</th><th>{t('hydrology.spill')}</th><th>{t('water.quality')}</th></tr></thead>
                       <tbody>{basin.months.map((m, index) => <tr key={index} className={index === month ? 'selected-month' : undefined}>
-                        <th scope="row">{t('climate.month', { value: index + 1 })}</th><td>{number(m.water_level_m, 1)}</td><td>{percent(m.storage / Math.max(1, basin.capacity), 1)}</td><td>{t(m.overflow > 0 ? 'hydrology.yes' : 'hydrology.no')}</td>
+                        <th scope="row">{t('climate.month', { value: index + 1 })}</th><td>{number(m.water_level_m, 1)}</td><td>{percent(m.storage / Math.max(1, basin.capacity), 1)}</td><td>{t(m.overflow > 0 ? 'hydrology.yes' : 'hydrology.no')}</td><td>{t(`water.quality.${m.quality}`)}</td>
                       </tr>)}</tbody>
                     </table>
                   </details>
                 </div>;
               })}
+            </motion.section>
+
+            <motion.section className="block" variants={section} custom={i++}>
+              <WaterPanel cell={cell} world={world} month={month} onMonth={m => onMonth(m, 'water')} />
             </motion.section>
 
             <motion.section className="block" variants={section} custom={i++}>

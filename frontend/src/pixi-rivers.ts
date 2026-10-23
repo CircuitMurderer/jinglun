@@ -2,7 +2,7 @@ import { Container, Graphics, WebGLRenderer } from 'pixi.js';
 import { screenTransform, type MapViewState } from './map-camera';
 import type { RiverRenderer } from './river-overlay';
 import type { WorldMap } from './types';
-import { displayRivers } from './river-display';
+import { displayRivers, riverAppearance } from './river-display';
 
 /** Static, real river geometry. No ticker, particles or simulation clock. */
 export async function createRiverRenderer(
@@ -20,6 +20,7 @@ export async function createRiverRenderer(
   let destroyed = false;
   let view = initialView;
   let strokeScale = 0;
+  let month: number | undefined;
   let inView = true;
   let observer: IntersectionObserver | undefined;
   const canvas = document.createElement('canvas');
@@ -53,12 +54,14 @@ export async function createRiverRenderer(
       rivers.clear();
       for (const river of riverNetwork) {
         if (river.points.length < 2) continue;
+        const appearance = riverAppearance(river, month);
+        if (!appearance.visible) continue;
         rivers.moveTo(river.points[0].x, river.points[0].y);
         for (const point of river.points.slice(1)) rivers.lineTo(point.x, point.y);
         rivers.stroke({
-          color: 0x5fd0ff, alpha: 0.9,
+          color: 0x5fd0ff, alpha: appearance.alpha,
           // Match SVG vector-effect="non-scaling-stroke" in CSS pixels.
-          width: (0.55 + river.flow_index / 100 * 1.25) / scale,
+          width: appearance.width / scale,
           cap: 'round', join: 'round',
         });
       }
@@ -94,6 +97,7 @@ export async function createRiverRenderer(
     host.append(canvas);
     return {
       setView(next) { view = next; draw(); },
+      setMonth(next) { if (month !== next) { month = next; strokeScale = 0; draw(); } },
       destroy,
     };
   } catch (error) {

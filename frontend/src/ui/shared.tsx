@@ -10,7 +10,7 @@ export const layers: Array<{ id: Layer; icon: IconName }> = [
   { id: 'water', icon: 'drop' }, { id: 'soil', icon: 'soil' },
   { id: 'agriculture', icon: 'wheat' }, { id: 'resources', icon: 'diamond' },
 ];
-export const isClimateLayer = (layer: Layer) => layer === 'temperature' || layer === 'rainfall';
+export const isClimateLayer = (layer: Layer) => layer === 'temperature' || layer === 'rainfall' || layer === 'water';
 
 export function locationKey(cell: Cell): MessageKey {
   return cell.land_fraction > 0 && cell.land_fraction < 1 ? 'inspector.mixed'

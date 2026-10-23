@@ -125,7 +125,7 @@ mod tests {
     async fn api_returns_real_world_and_structured_errors() {
         let (status, body) = request(r#"{"seed":"接口验证","cell_count":100}"#).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["map"]["generator_version"], "0.4.0");
+        assert_eq!(body["map"]["generator_version"], "0.5.0");
         assert_eq!(
             body["map"]["environment"]["water_budget"]["months"]
                 .as_array()
@@ -134,6 +134,15 @@ mod tests {
             12
         );
         assert!(body["map"]["environment"]["basins"].is_array());
+        assert!(body["map"]["environment"]["water_sources"].is_array());
+        assert_eq!(
+            body["map"]["cells"][0]["groundwater"]["months"]
+                .as_array()
+                .unwrap()
+                .len(),
+            12
+        );
+        assert!(body["map"]["cells"][0]["water_source_ids"].is_array());
         assert_eq!(body["map"]["cells"].as_array().unwrap().len(), 100);
         assert_eq!(
             body["map"]["cells"][0]["climate"]["months"]

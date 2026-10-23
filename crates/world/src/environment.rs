@@ -2,6 +2,7 @@
 use crate::hydrology::{self, Drainage, Lake, River, WaterBudget};
 use crate::lakes::Basin;
 use crate::seasonal::{self, ClimateProfile};
+use crate::water::{GroundProfile, WaterSource};
 use crate::{Cell, HEIGHT, Point, Resource, Terrain, WIDTH, fbm, index};
 use noise::{NoiseFn, Simplex};
 use serde::Serialize;
@@ -45,6 +46,7 @@ pub struct Environment {
     pub rivers: Vec<River>,
     pub lakes: Vec<Lake>,
     pub basins: Vec<Basin>,
+    pub water_sources: Vec<WaterSource>,
     pub atmosphere_budget: AtmosphereBudget,
     pub water_budget: WaterBudget,
 }
@@ -412,6 +414,8 @@ impl Field {
             lakes: usize,
             closed: usize,
             lake_ids: BTreeSet<usize>,
+            source_ids: BTreeSet<usize>,
+            groundwater: GroundProfile,
             coastal: bool,
             elevation: f64,
             rain: f64,
@@ -475,6 +479,8 @@ impl Field {
             a.rain += s.rain;
             a.temp += s.temperature;
             a.climate.add(&s.climate);
+            a.groundwater.add(&self.drainage.groundwater[id]);
+            a.source_ids.insert(self.drainage.basin[id]);
             a.flatness += s.flatness as f64;
             if !self.drainage.lake_mask[id] {
                 a.soil += s.soil as f64;
@@ -492,6 +498,7 @@ impl Field {
             *a.vegetation.entry(s.vegetation).or_default() += 1;
         }
         let geology = Simplex::new(self.seed as u32 ^ 0x9f44);
+        let sources: BTreeMap<_, _> = self.drainage.sources.iter().map(|s| (s.id, s)).collect();
         for (cell, a) in cells.iter_mut().zip(aggregates.iter_mut()) {
             // Very tiny unrelaxed cells can contain no raster centre. A single
             // centroid sample is a bounded fallback, not a different world field.
@@ -506,6 +513,8 @@ impl Field {
                     a.rain = s.rain;
                     a.temp = s.temperature;
                     a.climate = s.climate.clone();
+                    a.groundwater.add(&self.drainage.groundwater[y * COLS + x]);
+                    a.source_ids.insert(self.drainage.basin[y * COLS + x]);
                     a.flatness = s.flatness as f64;
                     a.soil = s.soil as f64;
                     a.agriculture = s.agriculture as f64;
@@ -575,6 +584,9 @@ impl Field {
             cell.temperature_c = (a.temp / count * 10.0).round() / 10.0;
             cell.climate = a.climate.clone();
             cell.climate.average(count);
+            a.groundwater.average(count);
+            cell.groundwater = a.groundwater.clone();
+            cell.water_source_ids = a.source_ids.iter().copied().collect();
             cell.flatness = (a.flatness / count).round() as u8;
             cell.soil_quality = (a.soil / count).round() as u8;
             cell.agricultural_suitability = (a.agriculture / count).round() as u8;
@@ -631,6 +643,27 @@ impl Field {
             let fraction = cell.land_fraction;
             let agriculture = cell.agricultural_suitability as f64 / 100.0;
             let water = (cell.aridity_index / 1.2).min(1.0);
+            // This remains a potential index, but salt water is no longer
+            // silently credited as freshwater. A shared ceiling is not a yield.
+            let fresh_ground = cell
+                .groundwater
+                .months
+                .iter()
+                .filter(|m| m.storage_mm > 1e-8 && m.tds_mg_l < 1000.0)
+                .count() as f64
+                / 12.0;
+            let fresh_surface = cell
+                .water_source_ids
+                .iter()
+                .filter_map(|id| sources.get(id))
+                .map(|s| {
+                    s.months
+                        .iter()
+                        .filter(|m| m.freshwater_ceiling > 0.0)
+                        .count() as f64
+                        / 12.0
+                })
+                .fold(0.0, f64::max);
             let resource = |kind, v| Resource {
                 kind,
                 potential: index(v * fraction),
@@ -658,7 +691,9 @@ impl Field {
                 resource("rare_earth", ore(73.1, 0.64)),
                 resource(
                     "freshwater",
-                    (water * 0.6 + cell.river_access as f64 / 100.0 * 0.65).min(1.0),
+                    (water * fresh_ground * 0.6
+                        + cell.river_access as f64 / 100.0 * fresh_surface * 0.65)
+                        .min(1.0),
                 ),
             ];
         }
@@ -827,6 +862,7 @@ impl Field {
             rivers: self.drainage.rivers(COLS, DX, DY),
             lakes,
             basins: self.drainage.basins.clone(),
+            water_sources: self.drainage.sources.clone(),
             atmosphere_budget: self.atmosphere_budget.clone(),
             water_budget: self.drainage.budget.clone(),
         }
