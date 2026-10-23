@@ -1,0 +1,51 @@
+{
+  "browser": "153.0.8010.12",
+  "cases": [
+    {
+      "name": "phase2 controls",
+      "passed": [
+        "shading/minimap sync",
+        "cached shade toggle",
+        "screen LOD",
+        "terrain-backed symbols",
+        "real region IDs",
+        "symbol toggle",
+        "theme",
+        "thematic isolation",
+        "camera/selection invariance",
+        "no regeneration",
+        "no per-frame texture rebuild"
+      ]
+    },
+    {
+      "name": "Phase 1 payload",
+      "passed": [
+        "SVG natural fallback",
+        "no crash",
+        "no unsupported detail at zoom"
+      ]
+    },
+    {
+      "name": "Canvas unavailable",
+      "passed": [
+        "SVG natural fallback",
+        "no crash"
+      ]
+    },
+    {
+      "name": "390px / DPR2",
+      "passed": [
+        "controls visible",
+        "no overflow",
+        "clutter suppressed"
+      ]
+    },
+    {
+      "name": "second seed",
+      "passed": [
+        "natural detail renders"
+      ]
+    }
+  ],
+  "errors": []
+}

@@ -10,6 +10,7 @@ mod environment;
 mod geology;
 mod hydrology;
 mod lakes;
+mod relief;
 mod seasonal;
 mod soil;
 mod water;

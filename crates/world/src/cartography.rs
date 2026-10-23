@@ -18,6 +18,7 @@ pub struct NaturalSurface {
     pub coast_path: String,
     pub shallow_path: String,
     pub terrain: Vec<NaturalBand>,
+    pub detail: crate::relief::NaturalDetail,
 }
 
 pub(crate) fn build(
@@ -28,6 +29,7 @@ pub(crate) fn build(
     width: f64,
     height: f64,
 ) -> NaturalSurface {
+    let detail = crate::relief::build(elevation, terrain, columns, rows, width, height);
     let land = contours(elevation, columns, rows, width, height, 0.0);
     let mask = |test: &dyn Fn(usize) -> bool| {
         (0..elevation.len())
@@ -48,6 +50,7 @@ pub(crate) fn build(
         .collect();
     NaturalSurface {
         version: 1,
+        detail,
         land_path: path(&land),
         coast_path: coastline(&land, width, height),
         // The existing environment classifies shallow sea above -650 metres.

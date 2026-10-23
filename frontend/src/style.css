@@ -2278,3 +2278,21 @@ button:disabled {
 
 /* Keep the view picker clear of the collapsed side-panel handle. */
 .stage-layout[data-left="closed"] { --hud-left: 40px; }
+
+/* Phase 2: static shaded terrain and restrained, screen-space cartography. */
+.natural-options { display: flex; width: fit-content; padding: 3px; gap: 2px; border-radius: 8px; }
+.natural-options button { background: transparent; color: var(--text-secondary); font: inherit; font-size: 11px; padding: 6px 10px; border: 0; border-radius: 5px; cursor: pointer; }
+.natural-options button[aria-pressed="true"] { background: rgb(var(--jade-rgb) / 0.14); color: var(--text-primary); }
+.natural-options button:focus-visible { outline: 2px solid var(--accent-jade); }
+.natural-texture { image-rendering: auto; }
+.natural-details { pointer-events: none; }
+.terrain-symbol { opacity: 0.74; }
+.mountain-symbol .symbol-fill { fill: #d9d1bb; stroke: #635e4f; stroke-width: 0.8; stroke-linejoin: round; }
+.mountain-symbol .symbol-snow { fill: #faf5e9; stroke: none; }
+.forest-symbol .symbol-fill { fill: #416651; stroke: #274c3b; stroke-width: 0.6; stroke-linejoin: round; }
+.forest-symbol .symbol-trunk { fill: none; stroke: #435344; stroke-width: 1; }
+.region-label text { font: 10px var(--font-mono); fill: var(--text-primary); stroke: rgb(var(--surface-tip-rgb) / 0.9); stroke-width: 3px; paint-order: stroke fill; stroke-linejoin: round; }
+:root[data-theme="dark"] .terrain-symbol { opacity: 0.64; }
+@media (max-width: 600px) { .natural-options button { font-size: 10px; padding: 5px 8px; } }
+:root[data-theme="dark"] .forest-symbol .symbol-fill { fill: #95b69c; stroke: #274c3b; }
+:root[data-theme="dark"] .forest-symbol .symbol-trunk { stroke: #b5c4a9; }

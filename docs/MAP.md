@@ -113,3 +113,9 @@ Rust 验证覆盖：几何铺满与邻接、参数边界、同种子重放、不
 ## 地质与建设增量（0.6.0）
 
 `environment` 增加 `scale`、`geology_provinces`、`deposits` 与 `sediment_budget`。地块增加 `geology_kind`、地质区组成、矿床份额、`soil_profile` 和 `construction`；边增加 `passage`，不创建道路。地质与建设图层按地块汇总着色。详细单位、土体体积守恒、极小地块回退、廊道限制与阶段收尾建议见 [本轮说明](GEOLOGY_SOIL_CONSTRUCTION.md)。
+
+## 可选自然地形的第二阶段表现
+
+自然地形支持独立的阴影和符号开关：原高程产生有明确显示夸张的静态 hillshade，类别场通过共享非负权重形成局部过渡。新增数据只位于 `environment.natural_surface.detail`；不改变生成器的环境、治理区、海岸、邻接与指标。主图/小地图共用缓存纹理；缺少 detail 或 Canvas 不可用时保留第一阶段 SVG。
+
+山地、森林符号按环境采样放置；放大后才出现地块编号，均是示意，不创建地名/设施。详细方法与限制见 [第二阶段提案](proposals/2026-10-23-natural-map-phase2.md)，测试和截图见 [验收记录](verification/2026-10-23-natural-map-phase2.md)。

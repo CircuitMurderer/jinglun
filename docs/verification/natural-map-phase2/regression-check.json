@@ -1,0 +1,84 @@
+{
+  "browser": "153.0.8010.12",
+  "seed": "jinglun-040",
+  "cases": [
+    {
+      "count": 100,
+      "generationMs": 1280.513,
+      "fingerprint": "51f99f4bd82c3afd",
+      "naturalSurfaceSha256": "11d780db7a63a7f3b085988a90bfc424610b1837e671f2ed66d00fe517f3d218",
+      "classicRiverRenderer": "gpu",
+      "passed": [
+        "classic click",
+        "natural click",
+        "candidate list",
+        "minimap",
+        "camera",
+        "selection",
+        "pan/zoom",
+        "river lifecycle",
+        "month",
+        "theme",
+        "thematic fallback",
+        "no regeneration"
+      ]
+    },
+    {
+      "count": 500,
+      "generationMs": 1344.883292,
+      "fingerprint": "51f99f4bd82c3afd",
+      "naturalSurfaceSha256": "11d780db7a63a7f3b085988a90bfc424610b1837e671f2ed66d00fe517f3d218",
+      "classicRiverRenderer": "gpu",
+      "passed": [
+        "classic click",
+        "natural click",
+        "minimap",
+        "camera",
+        "selection",
+        "pan/zoom",
+        "river lifecycle",
+        "month",
+        "theme",
+        "thematic fallback",
+        "no regeneration",
+        "regeneration"
+      ]
+    },
+    {
+      "count": 2000,
+      "generationMs": 1374.397417,
+      "fingerprint": "51f99f4bd82c3afd",
+      "naturalSurfaceSha256": "11d780db7a63a7f3b085988a90bfc424610b1837e671f2ed66d00fe517f3d218",
+      "classicRiverRenderer": "gpu",
+      "passed": [
+        "classic click",
+        "natural click",
+        "minimap",
+        "camera",
+        "selection",
+        "pan/zoom",
+        "river lifecycle",
+        "month",
+        "theme",
+        "thematic fallback",
+        "no regeneration"
+      ]
+    },
+    {
+      "viewport": "390x844",
+      "dpr": 2,
+      "passed": [
+        "natural view",
+        "switch visible",
+        "no horizontal overflow"
+      ]
+    },
+    {
+      "legacy": true,
+      "passed": [
+        "missing surface falls back without crashing"
+      ]
+    }
+  ],
+  "errors": []
+}

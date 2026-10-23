@@ -87,7 +87,7 @@ function Tooltip({ ref, layer, resource, month }: { ref: Ref<TooltipHandle>; lay
 }
 
 /* ---------- Overview map with live viewport frame ---------- */
-function Minimap({ world, layer, resource, month, viewRef, mapStyle }: { mapStyle: MapStyle; world: WorldMap; layer: Layer; resource: ResourceKind; month?: number; viewRef: RefObject<MapView | null> }) {
+function Minimap({ world, layer, resource, month, viewRef, mapStyle, relief }: { relief: boolean; mapStyle: MapStyle; world: WorldMap; layer: Layer; resource: ResourceKind; month?: number; viewRef: RefObject<MapView | null> }) {
   const { resolved: theme } = useTheme();
   const canvas = useRef<HTMLCanvasElement>(null);
   const frame = useRef<HTMLDivElement>(null);
@@ -100,7 +100,7 @@ function Minimap({ world, layer, resource, month, viewRef, mapStyle }: { mapStyl
     element.width = W * ratio; element.height = H * ratio;
     context.setTransform(ratio * W / world.width, 0, 0, ratio * H / world.height, 0, 0);
     if (effectiveMapStyle(mapStyle, layer, world) === 'natural') {
-      drawNaturalMinimap(context, world, terrainColor);
+      drawNaturalMinimap(context, world, terrainColor, relief);
       return;
     }
     for (const cell of world.cells) {
@@ -113,7 +113,7 @@ function Minimap({ world, layer, resource, month, viewRef, mapStyle }: { mapStyl
       context.lineWidth = 1;
       context.stroke();
     }
-  }, [world, layer, resource, month, W, H, theme, mapStyle]);
+  }, [world, layer, resource, month, W, H, theme, mapStyle, relief]);
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
@@ -250,6 +250,7 @@ const toggleDefs: Array<{ key: keyof Toggles; icon: IconName; label: MessageKey;
 export function MapStage({ world, layer, resource, month, toggles, status, error, onRetry, onSelect, onToggle, viewRef, children }: Props) {
   const { resolved: theme } = useTheme();
   const [mapStyle, setMapStyle] = useState<MapStyle>('classic');
+  const [naturalOptions, setNaturalOptions] = useState({ relief: true, symbols: true });
   const activeStyle = effectiveMapStyle(mapStyle, layer, world);
   const host = useRef<HTMLDivElement>(null);
   const tooltip = useRef<TooltipHandle>(null);
@@ -299,6 +300,7 @@ export function MapStage({ world, layer, resource, month, toggles, status, error
     view.select(initialCell(world.cells).id);
   }, [world, viewRef, mounted]);
 
+  useEffect(() => { viewRef.current?.setNaturalOptions(naturalOptions); }, [naturalOptions, viewRef, mounted]);
   useEffect(() => { viewRef.current?.setMapStyle(mapStyle); }, [mapStyle, viewRef, mounted]);
   useEffect(() => { viewRef.current?.setMonth(month); }, [month, viewRef, mounted]);
   useEffect(() => { viewRef.current?.setLayer(layer, resource); }, [layer, resource, viewRef, mounted, theme]);
@@ -324,6 +326,10 @@ export function MapStage({ world, layer, resource, month, toggles, status, error
           {mapStyle === 'classic' ? t('map.styleClassicNote') : layer !== 'terrain' ? t('map.styleThematicNote')
             : world && activeStyle !== 'natural' ? t('map.styleUnavailable') : t('map.styleNaturalNote')}
         </p>
+        {activeStyle === 'natural' && world?.environment.natural_surface?.detail && <div className="natural-options glass" role="group" aria-label={t('map.detailOptions')}>
+          {(['relief', 'symbols'] as const).map(key => <button type="button" key={key} aria-pressed={naturalOptions[key]}
+            onClick={() => setNaturalOptions(prev => ({ ...prev, [key]: !prev[key] }))} title={t(`map.detail.${key}Hint`)}>{t(`map.detail.${key}`)}</button>)}
+        </div>}
         <Legend world={world} layer={layer} resource={resource} month={month} mapStyle={activeStyle} />
         {toggles.water && <div className="readout glass">{t('water.riverPeriod', { period: month === undefined ? t('climate.annual') : t('climate.month', { value: month + 1 }) })}</div>}
         <div className="readout glass">
@@ -333,7 +339,7 @@ export function MapStage({ world, layer, resource, month, toggles, status, error
       </div>
 
       <div className="hud hud-top-right">
-        {world && mounted && <Minimap world={world} layer={layer} resource={resource} month={month} viewRef={viewRef} mapStyle={activeStyle} />}
+        {world && mounted && <Minimap world={world} layer={layer} resource={resource} month={month} viewRef={viewRef} mapStyle={activeStyle} relief={naturalOptions.relief} />}
         <div className="compass" aria-hidden="true">
           <svg viewBox="0 0 40 40" width="40" height="40">
             <circle cx="20" cy="20" r="17" />

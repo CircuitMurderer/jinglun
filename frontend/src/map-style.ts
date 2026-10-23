@@ -1,4 +1,5 @@
 import type { Layer, Terrain, WorldMap } from './types';
+import { naturalTexture } from './natural-detail.ts';
 
 export type MapStyle = 'classic' | 'natural';
 
@@ -16,7 +17,7 @@ export function naturalTerrainPaints(world: WorldMap): Array<{ path: string; ter
   });
 }
 
-export function drawNaturalMinimap(context: CanvasRenderingContext2D, world: WorldMap, color: (terrain: Terrain) => string): void {
+export function drawNaturalMinimap(context: CanvasRenderingContext2D, world: WorldMap, color: (terrain: Terrain) => string, shaded = true): void {
   const surface = world.environment.natural_surface;
   if (!surface || surface.version !== 1) return;
   context.fillStyle = color('deep_ocean');
@@ -31,6 +32,16 @@ export function drawNaturalMinimap(context: CanvasRenderingContext2D, world: Wor
   for (const paint of naturalTerrainPaints(world)) {
     context.fillStyle = color(paint.terrain);
     context.fill(new Path2D(paint.path), 'evenodd');
+  }
+  const texture = naturalTexture(world, color, shaded);
+  if (texture) {
+    context.imageSmoothingEnabled = true;
+    context.drawImage(texture.canvas, 0, 0, world.width, world.height);
+    // Lake footprints remain authoritative, not blended into dry terrain.
+    for (const paint of naturalTerrainPaints(world).filter(p => p.terrain === 'lake')) {
+      context.fillStyle = color('lake');
+      context.fill(new Path2D(paint.path), 'evenodd');
+    }
   }
   context.restore();
 }

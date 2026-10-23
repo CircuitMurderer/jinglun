@@ -4,6 +4,8 @@ import { MapCamera, screenTransform } from './map-camera';
 import { RiverOverlay } from './river-overlay';
 import { displayRivers, riverAppearance } from './river-display';
 import { getThemeSnapshot } from './theme';
+import { naturalTexture } from './natural-detail';
+import { detailLayout } from './map-detail-layout';
 import { effectiveMapStyle, naturalTerrainPaints, type MapStyle } from './map-style';
 
 /** Base night-atlas palette. Daylight colors keep the same terrain categories. */
@@ -147,6 +149,10 @@ export class MapView {
   private naturalClipId = `natural-land-${++mapViewSerial}`;
   private naturalClip = svg('clipPath', { id: this.naturalClipId, clipPathUnits: 'userSpaceOnUse' });
   private natural = svg('g', { class: 'natural-map', 'pointer-events': 'none', display: 'none' });
+  private naturalImage?: SVGImageElement;
+  private naturalDetails = svg('g', { class: 'natural-details', 'pointer-events': 'none' });
+  private naturalDetailKey = '';
+  private naturalOptions = { relief: true, symbols: true };
   private naturalPaints: Array<{ element: SVGElement; terrain: Terrain }> = [];
   private scene = svg('g');
   private graticule = svg('g', { 'pointer-events': 'none', class: 'graticule' });
@@ -192,7 +198,7 @@ export class MapView {
     this.borders.setAttribute('pointer-events', 'none');
     const definitions = svg('defs');
     definitions.append(this.riverClip, this.naturalClip);
-    this.scene.append(definitions, this.natural, this.polygons, this.symbols, this.borders, this.graticule, this.coastline, this.water);
+    this.scene.append(definitions, this.natural, this.polygons, this.symbols, this.borders, this.graticule, this.coastline, this.water, this.naturalDetails);
     this.element.append(this.scene);
     this.foregroundScene.append(this.centers, this.hoverLayer, this.selection);
     this.foreground.append(this.foregroundScene);
@@ -208,6 +214,7 @@ export class MapView {
       this.foregroundScene.setAttribute('transform', transform);
       this.overlay.setView(view);
       this.placeLabels();
+      this.updateNaturalDetails();
       this.onZoom(view.scale);
     });
     this.observer = new ResizeObserver(this.resize);
@@ -414,6 +421,9 @@ export class MapView {
     this.natural.replaceChildren();
     this.naturalClip.replaceChildren();
     this.naturalPaints = [];
+    this.naturalImage = undefined;
+    this.naturalDetails.replaceChildren();
+    this.naturalDetailKey = '';
     const surface = world.environment.natural_surface;
     if (!surface || surface.version !== 1) return;
     this.naturalClip.append(svg('path', { d: surface.land_path, 'clip-rule': 'evenodd' }));
@@ -431,10 +441,55 @@ export class MapView {
     for (const band of naturalTerrainPaints(world)) {
       land.append(paint(svg('path', { d: band.path, 'fill-rule': 'evenodd' }), band.terrain));
     }
+    this.naturalImage = svg('image', { width: String(world.width), height: String(world.height),
+      preserveAspectRatio: 'none', class: 'natural-texture', display: 'none' });
+    land.append(this.naturalImage);
+    for (const band of naturalTerrainPaints(world).filter(p => p.terrain === 'lake')) {
+      land.append(paint(svg('path', { d: band.path, 'fill-rule': 'evenodd' }), 'lake'));
+    }
     this.natural.append(land,
       svg('path', { d: surface.coast_path, class: 'natural-coast-halo' }),
       svg('path', { d: surface.coast_path, class: 'natural-coast-line' }),
     );
+  }
+
+  setNaturalOptions(options: { relief: boolean; symbols: boolean }): void {
+    this.naturalOptions = { ...options };
+    this.applyPresentation();
+  }
+
+  private updateNaturalDetails(): void {
+    if (!this.world || this.world.environment.natural_surface?.detail?.version !== 1
+      || !this.naturalOptions.symbols || effectiveMapStyle(this.mapStyle, this.layer, this.world) !== 'natural') {
+      this.naturalDetails.replaceChildren(); this.naturalDetailKey = '';
+      this.element.dataset.detailSymbols = this.element.dataset.detailLabels = '0';
+      return;
+    }
+    const layout = detailLayout(this.world, this.camera.state);
+    const key = `${layout.scale.toFixed(4)}:${layout.labels.map(l => l.id).join(',')}:${layout.symbols.map(s => `${s.position.x},${s.position.y}`).join(';')}`;
+    if (key === this.naturalDetailKey) return;
+    this.naturalDetailKey = key;
+    this.naturalDetails.replaceChildren();
+    this.element.dataset.detailSymbols = String(layout.symbols.length);
+    this.element.dataset.detailLabels = String(layout.labels.length);
+    for (const { position, terrain } of layout.symbols) {
+      const g = svg('g', { transform: `translate(${position.x} ${position.y}) scale(${1 / layout.scale})`,
+        class: terrain === 7 ? 'terrain-symbol mountain-symbol' : 'terrain-symbol forest-symbol', 'data-terrain': String(terrain) });
+      if (terrain === 7) {
+        g.append(svg('path', { d: 'M-9,6 L-2,-7 L6,6 Z M1,6 L6,-3 L11,6 Z', class: 'symbol-fill' }),
+          svg('path', { d: 'M-5,-1 L-2,-7 L1,-1 L-2,-3 Z', class: 'symbol-snow' }));
+      } else {
+        g.append(svg('path', { d: 'M-6,6 V1 M0,6 V-1 M6,6 V1', class: 'symbol-trunk' }),
+          svg('path', { d: 'M-10,2 L-6,-5 L-2,2 Z M-5,0 L0,-8 L5,0 Z M2,2 L6,-5 L10,2 Z', class: 'symbol-fill' }));
+      }
+      this.naturalDetails.append(g);
+    }
+    for (const { id, position } of layout.labels) {
+      const g = svg('g', { transform: `translate(${position.x} ${position.y}) scale(${1 / layout.scale})`, class: 'region-label', 'data-region-id': String(id) });
+      const label = svg('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central' });
+      label.textContent = `#${id + 1}`;
+      g.append(label); this.naturalDetails.append(g);
+    }
   }
 
   setMapStyle(style: MapStyle): void {
@@ -453,6 +508,13 @@ export class MapView {
     this.element.dataset.mapStyle = this.foreground.dataset.mapStyle = style;
     this.natural.setAttribute('display', natural ? '' : 'none');
     this.coastline.setAttribute('display', natural ? 'none' : '');
+    if (natural && this.naturalImage) {
+      const texture = naturalTexture(this.world, terrainColor, this.naturalOptions.relief);
+      this.naturalImage.setAttribute('display', texture ? '' : 'none');
+      if (texture && this.naturalImage.getAttribute('href') !== texture.href) this.naturalImage.setAttribute('href', texture.href);
+      this.element.dataset.relief = texture ? String(this.naturalOptions.relief) : 'fallback';
+    }
+    this.updateNaturalDetails();
     this.symbols.setAttribute('display', this.layer === 'terrain' && !natural ? '' : 'none');
     for (const paint of this.naturalPaints) paint.element.setAttribute('fill', terrainColor(paint.terrain));
     if (this.appliedStyle !== style) {
