@@ -37,8 +37,8 @@ export function ClimateChart({ profile, month, onMonth }: { profile: ClimateProf
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t('climate.chart')} onPointerLeave={() => setHover(undefined)}>
         <defs>
-          <linearGradient id="bar-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#5fd0ff" stopOpacity="0.95" /><stop offset="1" stopColor="#2f6fd0" stopOpacity="0.35" /></linearGradient>
-          <linearGradient id="temp-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#ff7a5c" /><stop offset="1" stopColor="#ffd27a" /></linearGradient>
+          <linearGradient id="bar-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="var(--accent-cyan)" stopOpacity="0.95" /><stop offset="1" stopColor="#2f6fd0" stopOpacity="0.35" /></linearGradient>
+          <linearGradient id="temp-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="var(--accent-coral)" /><stop offset="1" stopColor="var(--chart-gold)" /></linearGradient>
           <linearGradient id="temp-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#ffb35c" stopOpacity="0.22" /><stop offset="1" stopColor="#ffb35c" stopOpacity="0" /></linearGradient>
         </defs>
         {[0, 0.5, 1].map((k) => <line key={k} className="grid-line" x1={L} x2={W - R} y1={T + ph * k} y2={T + ph * k} />)}
@@ -86,7 +86,7 @@ export function ResourceRadar({ resources, active, onPick }: { resources: Resour
   return (
     <svg className="radar" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t('inspector.radar')}>
       <defs>
-        <radialGradient id="radar-fill"><stop offset="0" stopColor="#ffd27a" stopOpacity="0.15" /><stop offset="1" stopColor="#e0559f" stopOpacity="0.45" /></radialGradient>
+        <radialGradient id="radar-fill"><stop offset="0" stopColor="var(--chart-gold)" stopOpacity="0.15" /><stop offset="1" stopColor="#e0559f" stopOpacity="0.45" /></radialGradient>
       </defs>
       {[0.25, 0.5, 0.75, 1].map((k) => (
         <polygon key={k} className="radar-ring" points={resources.map((_, i) => at(i, R * k).join(',')).join(' ')} />

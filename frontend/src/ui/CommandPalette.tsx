@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { number, t } from '../i18n';
-import { terrainColors } from '../map';
+import { terrainColor } from '../map';
 import type { Layer, WorldMap } from '../types';
 import { Icon } from './Icon';
 import { layers, locationKey } from './shared';
@@ -89,7 +89,7 @@ export function CommandPalette({ open, world, onClose, onCell, onLayer, onPrevie
                 const cell = world!.cells[item.id];
                 return (
                   <div key={`c-${item.id}`} {...common}>
-                    <i className="swatch" style={{ background: terrainColors[cell.terrain] }} />
+                    <i className="swatch" style={{ background: terrainColor(cell.terrain) }} />
                     <span className="palette-main"><b>{t('inspector.cell', { value: number(cell.id + 1) })}</b> · {t(`terrain.${cell.terrain}`)}</span>
                     <span className="palette-meta">{t(locationKey(cell))} · {t('unit.m', { value: number(cell.elevation_m) })}</span>
                   </div>

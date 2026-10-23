@@ -1,7 +1,8 @@
 import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { MapView, cellFill, latitudeAt, legendGradient, terrainColors } from '../map';
+import { MapView, cellFill, latitudeAt, legendGradient, terrainColors, terrainColor } from '../map';
+import { useTheme } from './ThemePicker';
 import { screenTransform } from '../map-camera';
 import { number, percent, t, type MessageKey } from '../i18n';
 import type { Cell, Layer, Point, ResourceKind, Terrain, WorldMap } from '../types';
@@ -69,7 +70,7 @@ function Tooltip({ ref, layer, resource, month }: { ref: Ref<TooltipHandle>; lay
     <div ref={box} className={`map-tooltip${cell ? ' visible' : ''}`} role="presentation">
       {cell && <>
         <div className="tooltip-head">
-          <i style={{ background: terrainColors[cell.terrain] }} />
+          <i style={{ background: terrainColor(cell.terrain) }} />
           <strong>{t('inspector.cell', { value: number(cell.id + 1) })}</strong>
           <span>{t(`terrain.${cell.terrain}`)}</span>
         </div>
@@ -84,6 +85,7 @@ function Tooltip({ ref, layer, resource, month }: { ref: Ref<TooltipHandle>; lay
 
 /* ---------- Overview map with live viewport frame ---------- */
 function Minimap({ world, layer, resource, month, viewRef }: { world: WorldMap; layer: Layer; resource: ResourceKind; month?: number; viewRef: RefObject<MapView | null> }) {
+  const { resolved: theme } = useTheme();
   const canvas = useRef<HTMLCanvasElement>(null);
   const frame = useRef<HTMLDivElement>(null);
   const W = 208, H = Math.round(208 * world.height / world.width);
@@ -104,7 +106,7 @@ function Minimap({ world, layer, resource, month, viewRef }: { world: WorldMap; 
       context.lineWidth = 1;
       context.stroke();
     }
-  }, [world, layer, resource, month, W, H]);
+  }, [world, layer, resource, month, W, H, theme]);
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
@@ -146,7 +148,7 @@ function Legend({ world, layer, resource, month }: { world?: WorldMap; layer: La
     return (
       <div className="legend glass">
         <strong className="legend-title">{t('layer.terrain')}</strong>
-        <div className="terrain-legend">{shown.map((kind) => <span key={kind}><i style={{ background: terrainColors[kind] }} />{t(`terrain.${kind}`)}</span>)}</div>
+        <div className="terrain-legend">{shown.map((kind) => <span key={kind}><i style={{ background: terrainColor(kind) }} />{t(`terrain.${kind}`)}</span>)}</div>
       </div>
     );
   }
@@ -177,7 +179,7 @@ function Astrolabe() {
   return (
     <svg className="astrolabe" viewBox="0 0 200 200" aria-hidden="true">
       <defs>
-        <radialGradient id="globe" cx="40%" cy="35%"><stop offset="0" stopColor="#5fe0c0" stopOpacity="0.55" /><stop offset="1" stopColor="#0a1c2e" stopOpacity="0.1" /></radialGradient>
+        <radialGradient id="globe" cx="40%" cy="35%"><stop offset="0" stopColor="var(--accent-jade)" stopOpacity="0.55" /><stop offset="1" stopColor="var(--map-deep-ocean)" stopOpacity="0.1" /></radialGradient>
       </defs>
       <g className="ring ring-a"><circle cx="100" cy="100" r="92" />{Array.from({ length: 72 }, (_, i) => <line key={i} x1="100" y1="8" x2="100" y2={i % 6 ? 13 : 18} transform={`rotate(${i * 5} 100 100)`} />)}</g>
       <g className="ring ring-b"><ellipse cx="100" cy="100" rx="74" ry="26" /><ellipse cx="100" cy="100" rx="26" ry="74" /><circle cx="174" cy="100" r="3.5" className="planet" /></g>
@@ -233,6 +235,7 @@ const toggleDefs: Array<{ key: keyof Toggles; icon: IconName; label: MessageKey;
 ];
 
 export function MapStage({ world, layer, resource, month, toggles, status, error, onRetry, onSelect, onToggle, viewRef, children }: Props) {
+  const { resolved: theme } = useTheme();
   const host = useRef<HTMLDivElement>(null);
   const tooltip = useRef<TooltipHandle>(null);
   const zoomLabel = useRef<HTMLSpanElement>(null);
@@ -281,7 +284,7 @@ export function MapStage({ world, layer, resource, month, toggles, status, error
   }, [world, viewRef, mounted]);
 
   useEffect(() => { viewRef.current?.setMonth(month); }, [month, viewRef, mounted]);
-  useEffect(() => { viewRef.current?.setLayer(layer, resource); }, [layer, resource, viewRef, mounted]);
+  useEffect(() => { viewRef.current?.setLayer(layer, resource); }, [layer, resource, viewRef, mounted, theme]);
   useEffect(() => { viewRef.current?.showBorders(toggles.borders); }, [toggles.borders, viewRef, mounted]);
   useEffect(() => { viewRef.current?.showCenters(toggles.centers); }, [toggles.centers, viewRef, mounted]);
   useEffect(() => { viewRef.current?.showGraticule(toggles.graticule); }, [toggles.graticule, viewRef, mounted]);

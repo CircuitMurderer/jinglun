@@ -4,7 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#050b14" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      // Apply the saved appearance before the app loads to avoid a theme flash.
+      (() => {
+        let preference;
+        try { preference = localStorage.getItem('jinglun.theme'); } catch {}
+        const dark = preference === 'dark' || (preference !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        document.querySelector('meta[name="theme-color"]').content = dark ? '#050b14' : '#edf3f2';
+      })();
+    </script>
     <title>经纶</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>

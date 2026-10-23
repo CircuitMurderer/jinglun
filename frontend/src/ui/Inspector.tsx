@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { number, percent, t } from '../i18n';
-import { latitudeAt, terrainColors } from '../map';
+import { latitudeAt, terrainColor } from '../map';
 import type { Cell, Layer, ResourceKind, WorldMap } from '../types';
 import { ClimateChart, Gauge, ResourceRadar } from './Charts';
 import { Icon } from './Icon';
@@ -29,7 +29,7 @@ function Silhouette({ cell }: { cell: Cell }) {
     <svg className="silhouette" viewBox="0 0 88 88" width="88" height="88" aria-hidden="true">
       <circle cx="44" cy="44" r="42" className="sil-ring" />
       <circle cx="44" cy="44" r="36" className="sil-ring dashed" />
-      <motion.polygon points={pts} fill={terrainColors[cell.terrain]} className="sil-shape"
+      <motion.polygon points={pts} fill={terrainColor(cell.terrain)} className="sil-shape"
         initial={{ scale: 0.6, opacity: 0, rotate: -8 }} animate={{ scale: 1, opacity: 1, rotate: 0 }} transition={{ type: 'spring', stiffness: 200, damping: 18 }}
         style={{ transformOrigin: '44px 44px' }} />
     </svg>
@@ -70,7 +70,7 @@ export function Inspector({ world, cell, month, layer, resource, onFocus, onPrev
           <motion.header className="cell-hero" variants={section} custom={i++}>
             <Silhouette cell={cell} />
             <div className="hero-text">
-              <span className="terrain-chip"><i style={{ background: terrainColors[cell.terrain] }} />{t(`terrain.${cell.terrain}`)}</span>
+              <span className="terrain-chip"><i style={{ background: terrainColor(cell.terrain) }} />{t(`terrain.${cell.terrain}`)}</span>
               <h3>{t('inspector.cell', { value: number(cell.id + 1) })}</h3>
               <p>{t(locationKey(cell))} · {latText}</p>
               <p className="mono">{t('inspector.position', { x: number(cell.centroid.x), y: number(cell.centroid.y) })}</p>
@@ -100,10 +100,10 @@ export function Inspector({ world, cell, month, layer, resource, onFocus, onPrev
             <motion.section className="block" variants={section} custom={i++}>
               <h4>{t('inspector.indices')}</h4>
               <div className="gauges">
-                <Gauge value={cell.flatness} label={t('inspector.flatness')} hue="#8fd3e8" />
-                <Gauge value={cell.soil_quality} label={t('inspector.fertility')} hue="#e0b36a" />
-                <Gauge value={cell.agricultural_suitability} label={t('inspector.agriculture')} hue="#a6e36a" />
-                <Gauge value={cell.irrigation_potential} label={t('inspector.irrigation')} hue="#5fd0ff" />
+                <Gauge value={cell.flatness} label={t('inspector.flatness')} hue="var(--gauge-flat)" />
+                <Gauge value={cell.soil_quality} label={t('inspector.fertility')} hue="var(--gauge-soil)" />
+                <Gauge value={cell.agricultural_suitability} label={t('inspector.agriculture')} hue="var(--gauge-agriculture)" />
+                <Gauge value={cell.irrigation_potential} label={t('inspector.irrigation')} hue="var(--accent-cyan)" />
               </div>
               <div className="arable">
                 <div className="arable-head"><span>{t('inspector.arable')}</span><strong>{percent(cell.arable_fraction, 1)}</strong></div>
@@ -167,7 +167,7 @@ export function Inspector({ world, cell, month, layer, resource, onFocus, onPrev
                 return (
                   <button key={id} type="button" className="neighbor" onPointerEnter={() => onPreview(id)} onFocus={() => onPreview(id)} onBlur={() => onPreview(undefined)}
                     onClick={() => { onPreview(undefined); onFocus(id, false); }} title={`${t('inspector.cell', { value: id + 1 })} · ${t(`terrain.${n.terrain}`)}`}>
-                    <i style={{ background: terrainColors[n.terrain] }} />{number(id + 1)}<Icon name="chevron" size={12} />
+                    <i style={{ background: terrainColor(n.terrain) }} />{number(id + 1)}<Icon name="chevron" size={12} />
                   </button>
                 );
               })}

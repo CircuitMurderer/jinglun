@@ -3,13 +3,24 @@ import { t } from './i18n';
 import { MapCamera, screenTransform } from './map-camera';
 import { RiverOverlay } from './river-overlay';
 import { displayRivers } from './river-display';
+import { getThemeSnapshot } from './theme';
 
-/** Night-atlas palette: dark seas so land, rivers and selections glow. */
+/** Base night-atlas palette. Daylight colors keep the same terrain categories. */
 export const terrainColors: Record<Terrain, string> = {
   deep_ocean: '#0a1c2e', shallow_sea: '#123349', plains: '#9aa35f', grassland: '#6e9a52',
   forest: '#3d7550', desert: '#cfae6c', hills: '#a08c62', mountains: '#7e7c79', snow: '#e4ebef',
   plateau: '#ad9568', lake: '#2b8db5', tundra: '#8ea69c',
 };
+
+const lightTerrainColors: Record<Terrain, string> = {
+  deep_ocean: '#afcbd8', shallow_sea: '#c9dfe1', plains: '#d6dba0', grassland: '#b5d399',
+  forest: '#81b58d', desert: '#f1d9a4', hills: '#d4c5a3', mountains: '#b1b4b1', snow: '#f6f7f2',
+  plateau: '#ddc49a', lake: '#79bdd3', tundra: '#c7d9cd',
+};
+
+export function terrainColor(terrain: Terrain): string {
+  return (getThemeSnapshot().resolved === 'light' ? lightTerrainColors : terrainColors)[terrain];
+}
 
 type Ramp = ReadonlyArray<readonly [number, string]>;
 export const ramps = {
@@ -22,6 +33,21 @@ export const ramps = {
   agriculture: [[0, '#26302a'], [0.5, '#4f8f3c'], [1, '#d4f57c']],
   resources: [[0, '#1c2236'], [0.35, '#5b3fc4'], [0.7, '#e0559f'], [1, '#ffd27a']],
 } satisfies Record<string, Ramp>;
+
+const lightRamps = {
+  elevationSea: [[0, '#89afc2'], [1, '#d6e8e7']],
+  elevationLand: [[0, '#bdd7af'], [0.3, '#d4dba7'], [0.55, '#e3cea5'], [0.8, '#c5beb2'], [1, '#f7f6ee']],
+  temperature: [[0, '#879cdd'], [0.36, '#b1dde7'], [0.5, '#f2ebd9'], [0.7, '#edbd7b'], [1, '#d57070']],
+  rainfall: [[0, '#efe0bd'], [0.35, '#cbd69c'], [0.65, '#78bfba'], [1, '#58a6d6']],
+  water: [[0, '#f1d2ad'], [0.4, '#d7d9a7'], [0.7, '#8ccdc8'], [1, '#68afd4']],
+  soil: [[0, '#f0e7d7'], [0.5, '#d3b68f'], [1, '#a97e50']],
+  agriculture: [[0, '#e4e7d7'], [0.5, '#a8cb8b'], [1, '#5c985c']],
+  resources: [[0, '#e8e5f0'], [0.35, '#b9a4e2'], [0.7, '#dd9cbb'], [1, '#efc982']],
+} satisfies Record<keyof typeof ramps, Ramp>;
+
+function colorRamp(kind: keyof typeof ramps): Ramp {
+  return (getThemeSnapshot().resolved === 'light' ? lightRamps : ramps)[kind];
+}
 
 const rgbCache = new Map<string, number[]>();
 function rgb(hex: string): number[] {
@@ -44,28 +70,28 @@ function css(ramp: Ramp, from = 0, to = 1): string {
 }
 /** CSS gradient that matches the fill function, for legends. */
 export function legendGradient(layer: Exclude<Layer, 'terrain'>): string {
-  if (layer === 'elevation') return `linear-gradient(90deg,${css(ramps.elevationSea, 0, 0.5)},${css(ramps.elevationLand, 0.5, 1)})`;
-  return `linear-gradient(90deg,${css(ramps[layer])})`;
+  if (layer === 'elevation') return `linear-gradient(90deg,${css(colorRamp('elevationSea'), 0, 0.5)},${css(colorRamp('elevationLand'), 0.5, 1)})`;
+  return `linear-gradient(90deg,${css(colorRamp(layer))})`;
 }
 
 export function cellFill(cell: Cell, layer: Layer, resource: ResourceKind, month?: number): string {
-  if (layer === 'terrain') return terrainColors[cell.terrain];
+  if (layer === 'terrain') return terrainColor(cell.terrain);
   if (layer === 'elevation') {
-    if (!cell.is_land) return sample(ramps.elevationSea, (cell.elevation_m + 4040) / 4040);
-    return sample(ramps.elevationLand, cell.elevation_m / 3600);
+    if (!cell.is_land) return sample(colorRamp('elevationSea'), (cell.elevation_m + 4040) / 4040);
+    return sample(colorRamp('elevationLand'), cell.elevation_m / 3600);
   }
-  if (!cell.is_land) return terrainColors[cell.terrain];
-  if (cell.terrain === 'lake') return terrainColors.lake;
+  if (!cell.is_land) return terrainColor(cell.terrain);
+  if (cell.terrain === 'lake') return terrainColor('lake');
   if (layer === 'temperature') {
     const temperature = month === undefined ? cell.temperature_c : cell.climate.months[month].temperature_c;
-    return sample(ramps.temperature, (temperature + 30) / 70);
+    return sample(colorRamp('temperature'), (temperature + 30) / 70);
   }
-  if (layer === 'rainfall') return sample(ramps.rainfall, month === undefined
+  if (layer === 'rainfall') return sample(colorRamp('rainfall'), month === undefined
     ? cell.rainfall_mm / 2400 : cell.climate.months[month].precipitation_mm / 300);
-  if (layer === 'water') return sample(ramps.water, cell.aridity_index / 1.5);
-  if (layer === 'soil') return sample(ramps.soil, cell.soil_quality / 100);
-  if (layer === 'agriculture') return sample(ramps.agriculture, cell.agricultural_suitability / 100);
-  return sample(ramps.resources, (cell.resources.find((r) => r.kind === resource)?.potential ?? 0) / 70);
+  if (layer === 'water') return sample(colorRamp('water'), cell.aridity_index / 1.5);
+  if (layer === 'soil') return sample(colorRamp('soil'), cell.soil_quality / 100);
+  if (layer === 'agriculture') return sample(colorRamp('agriculture'), cell.agricultural_suitability / 100);
+  return sample(colorRamp('resources'), (cell.resources.find((r) => r.kind === resource)?.potential ?? 0) / 70);
 }
 
 /** Latitude of a world y coordinate (north at the top). */

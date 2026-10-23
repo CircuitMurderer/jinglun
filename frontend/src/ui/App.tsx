@@ -11,10 +11,12 @@ import { Inspector } from './Inspector';
 import { LayerDock } from './LayerDock';
 import { MapStage, type Status, type Toggles } from './MapStage';
 import { initialCell, isClimateLayer, layers, loadConfig, saveConfig } from './shared';
+import { ThemePicker, useTheme } from './ThemePicker';
 
 const compactLayoutQuery = '(max-width: 1180px)';
 
 export function App() {
+  useTheme();
   const [config, setConfig] = useState<MapConfig>(() => loadConfig(t('settings.defaultSeed')));
   const [result, setResult] = useState<MapResponse>();
   const [status, setStatus] = useState<Status>('loading');
@@ -253,6 +255,7 @@ export function App() {
         </div>
 
         <div className="topbar-actions">
+          <ThemePicker />
           <button type="button" className="search-trigger" onClick={() => setPaletteOpen(true)} aria-label={t('palette.open')}>
             <Icon name="search" size={15} />
             <span>{selected ? `${t('inspector.cell', { value: number(selected.id + 1) })} · ${t(`terrain.${selected.terrain}`)}` : t('palette.open')}</span>

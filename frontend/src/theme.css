@@ -1,0 +1,131 @@
+/* Theme colors only: geometry, timing and effects stay in style.css. */
+:root {
+  --jade-rgb: 95 224 192;
+  --gold-rgb: 235 193 118;
+  --cyan-rgb: 95 208 255;
+  --coral-rgb: 255 122 92;
+  --ink-rgb: 255 255 255;
+  --line-rgb: 148 190 214;
+  --surface-top-rgb: 6 15 27;
+  --surface-brand-rgb: 14 36 58;
+  --surface-badge-rgb: 15 32 54;
+  --surface-inset-rgb: 5 13 24;
+  --surface-control-rgb: 14 29 48;
+  --surface-hover-rgb: 20 42 68;
+  --map-glow-rgb: 20 56 88;
+  --relief-rgb: 238 244 248;
+  --sea-edge-rgb: 95 175 215;
+  --land-edge-rgb: 12 26 38;
+  --coast-rgb: 214 245 236;
+  --graticule-rgb: 145 200 235;
+  --lat-text-rgb: 175 210 232;
+  --surface-label-rgb: 5 14 25;
+  --vignette-rgb: 2 6 13;
+  --muted-fill-rgb: 156 178 196;
+  --surface-tip-rgb: 5 12 22;
+  --button-shade-rgb: 4 18 30;
+  --surface-option-rgb: 15 32 54;
+  --surface-card-rgb: 12 26 44;
+  --surface-soft-rgb: 10 22 38;
+  --surface-raised-rgb: 16 36 60;
+  --surface-raised-end-rgb: 9 20 35;
+  --freeze-rgb: 110 198 232;
+  --radar-glow-rgb: 224 85 159;
+  --surface-resource-rgb: 15 40 68;
+  --overlay-rgb: 4 10 19;
+  --loading-glow-rgb: 12 33 56;
+  --loading-edge-rgb: 3 8 16;
+  --surface-loading-rgb: 7 16 30;
+  --surface-toast-rgb: 6 14 26;
+  --modal-rgb: 2 7 15;
+  --grid-rgb: 120 180 220;
+  --shadow-rgb: 0 0 0;
+  --shadow-strength: 1;
+  --page-glow: #0c2138; --page-mid: #050d19; --page-edge: #03070e;
+  --text-strong: #ffffff; --brand-highlight: #cbeee4;
+  --selection-ink: #fff3d1; --selection-dash: #1b2838;
+  --chart-warm: #ff9c6e; --chart-gold: #ffd27a; --chart-dot-stroke: #081525; --chart-melt: #d8f3ff;
+  --button-ink: #04121e; --water-swatch: #174666;
+  --map-deep-ocean: #0a1c2e; --map-shallow-sea: #123349;
+  --gauge-flat: #8fd3e8; --gauge-soil: #e0b36a; --gauge-agriculture: #a6e36a;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-deep: #edf3f2; --bg-abyss: #dbe8e9;
+  --bg-panel: rgba(250, 253, 250, 0.82); --bg-panel-strong: rgba(248, 252, 249, 0.94);
+  --bg-elevated: rgba(226, 239, 237, 0.76); --bg-hover: rgba(13, 112, 89, 0.08);
+  --border-subtle: rgba(65, 101, 112, 0.2); --border-glow: rgba(13, 112, 89, 0.45); --border-gold: rgba(158, 103, 28, 0.4);
+  --text-primary: #203d43; --text-secondary: #48666f; --text-muted: #5b747c;
+  --accent-jade: #0d7059; --accent-cyan: #0f6f9b; --accent-gold: #9e671c; --accent-coral: #bd4930;
+  --shadow-glass: 0 18px 48px rgba(42, 79, 87, 0.12), 0 2px 10px rgba(42, 79, 87, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --jade-rgb: 13 112 89;
+  --gold-rgb: 158 103 28;
+  --cyan-rgb: 15 111 155;
+  --coral-rgb: 189 73 48;
+  --ink-rgb: 29 61 72;
+  --line-rgb: 66 104 121;
+  --surface-top-rgb: 249 253 252;
+  --surface-brand-rgb: 226 241 235;
+  --surface-badge-rgb: 224 235 237;
+  --surface-inset-rgb: 247 251 251;
+  --surface-control-rgb: 239 246 246;
+  --surface-hover-rgb: 219 235 232;
+  --map-glow-rgb: 205 226 231;
+  --relief-rgb: 48 68 62;
+  --sea-edge-rgb: 56 115 139;
+  --land-edge-rgb: 62 92 87;
+  --coast-rgb: 39 98 87;
+  --graticule-rgb: 64 106 130;
+  --lat-text-rgb: 63 96 109;
+  --surface-label-rgb: 246 251 250;
+  --vignette-rgb: 185 207 213;
+  --muted-fill-rgb: 92 123 136;
+  --surface-tip-rgb: 251 253 251;
+  --button-shade-rgb: 255 255 255;
+  --surface-option-rgb: 238 245 243;
+  --surface-card-rgb: 234 242 241;
+  --surface-soft-rgb: 245 250 248;
+  --surface-raised-rgb: 231 242 239;
+  --surface-raised-end-rgb: 247 250 246;
+  --freeze-rgb: 43 128 159;
+  --radar-glow-rgb: 164 72 117;
+  --surface-resource-rgb: 222 237 238;
+  --overlay-rgb: 207 220 220;
+  --loading-glow-rgb: 230 243 237;
+  --loading-edge-rgb: 243 248 245;
+  --surface-loading-rgb: 250 253 249;
+  --surface-toast-rgb: 251 253 249;
+  --modal-rgb: 79 104 114;
+  --grid-rgb: 43 97 117;
+  --shadow-rgb: 49 84 97; --shadow-strength: 0.22;
+  --page-glow: #e3efea; --page-mid: #edf3f2; --page-edge: #dce8eb;
+  --text-strong: #214a4a; --brand-highlight: #266b5b;
+  --selection-ink: #785115; --selection-dash: #fff9dc;
+  --chart-warm: #b94d30; --chart-gold: #a06a17; --chart-dot-stroke: #f9fcf8; --chart-melt: #2388ab;
+  --button-ink: #ffffff; --water-swatch: #94b8c8;
+  --map-deep-ocean: #afcbd8; --map-shallow-sea: #c9dfe1;
+  --gauge-flat: #237f9d; --gauge-soil: #9f6b29; --gauge-agriculture: #4d7e24;
+}
+
+.theme-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  min-height: 34px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  background: rgb(var(--surface-control-rgb) / 0.72);
+  color: var(--text-secondary);
+}
+.theme-picker:focus-within, .theme-picker:hover { color: var(--accent-jade); border-color: var(--border-glow); }
+.theme-picker select { cursor: pointer; background: transparent; border: 0; padding: 5px 0; font-size: 12px; outline-offset: 3px; max-width: 92px; }
+.theme-picker option { background: var(--bg-deep); color: var(--text-primary); }
+:root[data-theme="light"] .stage-vignette { box-shadow: inset 0 0 110px rgba(150, 180, 185, 0.24); }
+@media (max-width: 520px) {
+  .topbar-actions { gap: 5px; }
+  .theme-picker { gap: 3px; padding: 0 5px; }
+  .theme-picker select { font-size: 11px; max-width: 76px; }
+  .export-btn span { display: none; }
+}
