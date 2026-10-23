@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { MapView, cellFill, latitudeAt, legendGradient, terrainColors, terrainColor, geologyColors, geologyColor } from '../map';
 import { useTheme } from './ThemePicker';
 import { screenTransform } from '../map-camera';
+import { drawNaturalMinimap, effectiveMapStyle, naturalTerrainPaints, type MapStyle } from '../map-style';
 import { number, percent, t, type MessageKey } from '../i18n';
 import type { Cell, Layer, Point, ResourceKind, Terrain, WorldMap } from '../types';
 import { Icon, type IconName } from './Icon';
@@ -90,7 +91,7 @@ function Tooltip({ ref, layer, resource, month }: { ref: Ref<TooltipHandle>; lay
 }
 
 /* ---------- Overview map with live viewport frame ---------- */
-function Minimap({ world, layer, resource, month, viewRef }: { world: WorldMap; layer: Layer; resource: ResourceKind; month?: number; viewRef: RefObject<MapView | null> }) {
+function Minimap({ world, layer, resource, month, viewRef, mapStyle, relief }: { relief: boolean; mapStyle: MapStyle; world: WorldMap; layer: Layer; resource: ResourceKind; month?: number; viewRef: RefObject<MapView | null> }) {
   const { resolved: theme } = useTheme();
   const canvas = useRef<HTMLCanvasElement>(null);
   const frame = useRef<HTMLDivElement>(null);
@@ -102,6 +103,10 @@ function Minimap({ world, layer, resource, month, viewRef }: { world: WorldMap; 
     const ratio = Math.min(2, window.devicePixelRatio || 1);
     element.width = W * ratio; element.height = H * ratio;
     context.setTransform(ratio * W / world.width, 0, 0, ratio * H / world.height, 0, 0);
+    if (effectiveMapStyle(mapStyle, layer, world) === 'natural') {
+      drawNaturalMinimap(context, world, terrainColor, relief);
+      return;
+    }
     for (const cell of world.cells) {
       context.beginPath();
       cell.polygon.forEach((p, i) => (i ? context.lineTo(p.x, p.y) : context.moveTo(p.x, p.y)));
@@ -112,7 +117,7 @@ function Minimap({ world, layer, resource, month, viewRef }: { world: WorldMap; 
       context.lineWidth = 1;
       context.stroke();
     }
-  }, [world, layer, resource, month, W, H, theme]);
+  }, [world, layer, resource, month, W, H, theme, mapStyle, relief]);
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
@@ -146,10 +151,12 @@ function Minimap({ world, layer, resource, month, viewRef }: { world: WorldMap; 
 }
 
 /* ---------- Legend ---------- */
-function Legend({ world, layer, resource, month }: { world?: WorldMap; layer: Layer; resource: ResourceKind; month?: number }) {
+function Legend({ world, layer, resource, month, mapStyle }: { mapStyle: MapStyle; world?: WorldMap; layer: Layer; resource: ResourceKind; month?: number }) {
   if (layer === 'geology') return <div className="legend glass"><strong className="legend-title">{t('layer.geology')}</strong><div className="terrain-legend">{(Object.keys(geologyColors) as Array<keyof typeof geologyColors>).map(kind => <span key={kind}><i style={{ background: geologyColor(kind) }} />{t(`geology.kind.${kind}`)}</span>)}</div></div>;
   if (layer === 'terrain') {
-    const present = new Set(world?.cells.map((cell) => cell.terrain) ?? []);
+    const present = new Set<Terrain>(world && effectiveMapStyle(mapStyle, layer, world) === 'natural'
+      ? ['deep_ocean', 'shallow_sea', 'plains', ...naturalTerrainPaints(world).map(paint => paint.terrain)]
+      : world?.cells.map((cell) => cell.terrain) ?? []);
     const order = Object.keys(terrainColors) as Terrain[];
     const shown = world ? order.filter((kind) => present.has(kind)) : order;
     return (
@@ -247,12 +254,15 @@ const toggleDefs: Array<{ key: keyof Toggles; icon: IconName; label: MessageKey;
 
 export function MapStage({ world, layer, resource, month, toggles, status, error, onRetry, onSelect, onToggle, viewRef, children }: Props) {
   const { resolved: theme } = useTheme();
+  const [mapStyle, setMapStyle] = useState<MapStyle>('classic');
+  const [naturalOptions, setNaturalOptions] = useState({ relief: true, symbols: true });
+  const activeStyle = effectiveMapStyle(mapStyle, layer, world);
   const host = useRef<HTMLDivElement>(null);
   const tooltip = useRef<TooltipHandle>(null);
   const zoomLabel = useRef<HTMLSpanElement>(null);
   const cursorLabel = useRef<HTMLSpanElement>(null);
-  const latest = useRef({ onSelect, world, layer, resource, month, toggles });
-  latest.current = { onSelect, world, layer, resource, month, toggles };
+  const latest = useRef({ onSelect, world, layer, resource, month, toggles, mapStyle });
+  latest.current = { onSelect, world, layer, resource, month, toggles, mapStyle };
   const [mounted, setMounted] = useState(false);
   const [everReady, setEverReady] = useState(false);
 
@@ -286,6 +296,7 @@ export function MapStage({ world, layer, resource, month, toggles, status, error
     const { layer: l, resource: r, month: m, toggles: tg } = latest.current;
     view.setMonth(m);
     view.setLayer(l, r);
+    view.setMapStyle(latest.current.mapStyle);
     view.setWorld(world);
     view.showBorders(tg.borders);
     view.showCenters(tg.centers);
@@ -294,6 +305,8 @@ export function MapStage({ world, layer, resource, month, toggles, status, error
     view.select(initialCell(world.cells).id);
   }, [world, viewRef, mounted]);
 
+  useEffect(() => { viewRef.current?.setNaturalOptions(naturalOptions); }, [naturalOptions, viewRef, mounted]);
+  useEffect(() => { viewRef.current?.setMapStyle(mapStyle); }, [mapStyle, viewRef, mounted]);
   useEffect(() => { viewRef.current?.setMonth(month); }, [month, viewRef, mounted]);
   useEffect(() => { viewRef.current?.setLayer(layer, resource); }, [layer, resource, viewRef, mounted, theme]);
   useEffect(() => { viewRef.current?.showBorders(toggles.borders); }, [toggles.borders, viewRef, mounted]);
@@ -303,13 +316,26 @@ export function MapStage({ world, layer, resource, month, toggles, status, error
   useEffect(() => { if (status === 'ready') setEverReady(true); }, [status]);
 
   return (
-    <section className="map-stage" data-layer={layer}>
+    <section className="map-stage" data-layer={layer} data-map-style={activeStyle}>
       <div className="map-host" ref={host} />
       <div className="stage-vignette" aria-hidden="true" />
       <div className="stage-corners" aria-hidden="true"><i /><i /><i /><i /></div>
 
       <div className="hud hud-top-left">
-        <Legend world={world} layer={layer} resource={resource} month={month} />
+        <div className="map-style-switch glass" role="group" aria-label={t('map.styleLabel')}>
+          {(['classic', 'natural'] as const).map(style => <button key={style} type="button"
+            aria-pressed={mapStyle === style} className={mapStyle === style ? 'active' : ''}
+            onClick={() => setMapStyle(style)}>{t(`map.style.${style}`)}</button>)}
+        </div>
+        <p className="map-style-note glass" role="status">
+          {mapStyle === 'classic' ? t('map.styleClassicNote') : layer !== 'terrain' ? t('map.styleThematicNote')
+            : world && activeStyle !== 'natural' ? t('map.styleUnavailable') : t('map.styleNaturalNote')}
+        </p>
+        {activeStyle === 'natural' && world?.environment.natural_surface?.detail && <div className="natural-options glass" role="group" aria-label={t('map.detailOptions')}>
+          {(['relief', 'symbols'] as const).map(key => <button type="button" key={key} aria-pressed={naturalOptions[key]}
+            onClick={() => setNaturalOptions(prev => ({ ...prev, [key]: !prev[key] }))} title={t(`map.detail.${key}Hint`)}>{t(`map.detail.${key}`)}</button>)}
+        </div>}
+        <Legend world={world} layer={layer} resource={resource} month={month} mapStyle={activeStyle} />
         {toggles.water && <div className="readout glass">{t('water.riverPeriod', { period: month === undefined ? t('climate.annual') : t('climate.month', { value: month + 1 }) })}</div>}
         <div className="readout glass">
           <span ref={zoomLabel}>{t('map.zoom', { value: percent(1) })}</span>
@@ -318,7 +344,7 @@ export function MapStage({ world, layer, resource, month, toggles, status, error
       </div>
 
       <div className="hud hud-top-right">
-        {world && mounted && <Minimap world={world} layer={layer} resource={resource} month={month} viewRef={viewRef} />}
+        {world && mounted && <Minimap world={world} layer={layer} resource={resource} month={month} viewRef={viewRef} mapStyle={activeStyle} relief={naturalOptions.relief} />}
         <div className="compass" aria-hidden="true">
           <svg viewBox="0 0 40 40" width="40" height="40">
             <circle cx="20" cy="20" r="17" />

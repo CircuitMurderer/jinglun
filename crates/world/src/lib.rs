@@ -5,12 +5,14 @@ use std::collections::BTreeMap;
 use voronoice::{BoundingBox, Point as VPoint, Voronoi, VoronoiBuilder};
 
 mod atmosphere;
+mod cartography;
 mod construction;
 mod environment;
 mod geology;
 mod hydrology;
 mod lakes;
 mod ocean;
+mod relief;
 mod seasonal;
 mod soil;
 mod tectonics;

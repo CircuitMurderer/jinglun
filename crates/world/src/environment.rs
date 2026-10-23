@@ -1,4 +1,5 @@
 //! Natural geography is sampled independently of the governance tessellation.
+use crate::cartography::{self, NaturalSurface};
 use crate::construction::{self, KM_PER_MAP_UNIT, Site, WorldScale};
 use crate::geology::{Deposit, Geology, MineralOccurrence, Province};
 use crate::hydrology::{self, Drainage, Lake, River, WaterBudget};
@@ -71,6 +72,7 @@ pub struct Environment {
     pub mean_land_rainfall_mm: u32,
     pub layers: Vec<SurfaceLayer>,
     pub coast_path: String,
+    pub natural_surface: NaturalSurface,
     pub rivers: Vec<River>,
     pub lakes: Vec<Lake>,
     pub basins: Vec<Basin>,
@@ -1064,6 +1066,14 @@ impl Field {
         let soil = scalar(|s| s.soil as f64 / 100.0);
         let agriculture = scalar(|s| s.agriculture as f64 / 100.0);
         let water = scalar(|s| (s.rain / s.pet / 1.5).min(1.0));
+        let natural_surface = cartography::build(
+            &self.samples.iter().map(|s| s.elevation).collect::<Vec<_>>(),
+            &terrain,
+            COLS,
+            ROWS,
+            WIDTH,
+            HEIGHT,
+        );
         let layers = vec![
             self.bands("terrain", &terrain),
             self.bands("elevation", &elevation),
@@ -1147,6 +1157,7 @@ impl Field {
                 .round() as u32,
             layers,
             coast_path,
+            natural_surface,
             rivers: self.drainage.rivers(COLS, DX, DY),
             lakes,
             basins: self.drainage.basins.clone(),

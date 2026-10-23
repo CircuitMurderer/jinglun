@@ -1,0 +1,15 @@
+{
+  "baseline_ref": "69f86cdc1014233c623663a36bc3801ba88cc218",
+  "config": {
+    "seed": "jinglun-040",
+    "cell_count": 100,
+    "relaxations": 2,
+    "land_ratio": 0.45
+  },
+  "comparison": "All original map fields, excluding only the additive environment.natural_surface. Non-deterministic response.meta excluded.",
+  "original_map_fields_equal": true,
+  "canonical_model_sha256": "adbad185adb3ab9b9a726062274f06edd2907736e64886b660c72e3a1b68e892",
+  "baseline_response_bytes": 6113033,
+  "new_response_bytes": 6352666,
+  "natural_surface_bytes": 239614
+}

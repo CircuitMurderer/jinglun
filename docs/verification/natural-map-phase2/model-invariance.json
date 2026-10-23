@@ -1,0 +1,18 @@
+{
+  "baseline_ref": "67bcf0f4facdf7e6fc6ff93ae86c265d8480652f",
+  "seed": "jinglun-040",
+  "cell_count": 100,
+  "original_map_fields_equal": true,
+  "excluded": [
+    "environment.natural_surface.detail",
+    "response.meta"
+  ],
+  "canonical_model_sha256": "758258255450520f846224ebfd2655ec50e5ad5c5e5710fadc7da1a5323a7136",
+  "detail_bytes": 257064,
+  "response_bytes": 6609740,
+  "shading_range": [
+    113,
+    140
+  ],
+  "symbol_count": 146
+}

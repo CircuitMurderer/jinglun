@@ -107,6 +107,19 @@ export interface Basin {
   id: number; kind: 'dry' | 'closed' | 'seasonal' | 'overflow';
   spill_elevation_m: number; capacity: number; initial_storage: number; months: LakeMonth[];
 }
+export interface NaturalDetail {
+  version: 1; columns: number; rows: number; terrain: number[]; shade: number[];
+  azimuth_deg: number; altitude_deg: number; vertical_exaggeration: number;
+  symbols: Array<{ position: Point; terrain: number }>;
+}
+export interface NaturalSurface {
+  version: 1;
+  land_path: string;
+  coast_path: string;
+  shallow_path: string;
+  terrain: Array<{ terrain: number; path: string }>;
+  detail?: NaturalDetail; // Phase 2 enhancement; Phase 1 payloads remain supported.
+}
 export interface WorldMap {
   generator_version: string;
   config: MapConfig;
@@ -127,6 +140,7 @@ export interface WorldMap {
     terrain_palette: Terrain[];
     layers: Array<{kind: Exclude<Layer, 'resources' | 'temperature'>; bands: Array<{value: number; path: string}>}>;
     coast_path: string;
+    natural_surface?: NaturalSurface; // Additive presentation data; absent on older servers.
     rivers: Array<{id: number; points: Point[]; flow_index: number; basin_id: number; outlet: 'junction' | 'ocean' | 'lake' | 'boundary' | 'closed_basin'; annual_flow: number; monthly_flow: number[]; monthly_flow_index: number[]}>;
     lakes: Array<{id: number; path: string; area_fraction: number; spill_elevation_m: number; basin_id: number}>;
     basins: Basin[];

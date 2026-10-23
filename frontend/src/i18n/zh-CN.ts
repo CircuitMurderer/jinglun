@@ -1,4 +1,17 @@
 export const zhCN = {
+  'map.detailOptions': '自然地形表现选项',
+  'map.detail.relief': '地貌阴影',
+  'map.detail.reliefHint': '真实高程的西北光照示意；垂直夸张仅用于显示，不是实际坡度。',
+  'map.detail.symbols': '地表符号',
+  'map.detail.symbolsHint': '按缩放显示山地、森林和真实地块编号；不是城市、树木数量或矿山位置。',
+
+  'map.styleLabel': '地图表现',
+  'map.style.classic': '经典地块',
+  'map.style.natural': '自然地形',
+  'map.styleClassicNote': '整块着色 · 分区即操作单位',
+  'map.styleNaturalNote': '自然海岸与地形 · 点击仍选择治理分区',
+  'map.styleThematicNote': '专题仍按地块汇总；返回地形恢复自然底图。',
+  'map.styleUnavailable': '当前数据不含自然底图，已回退经典地块。',
   'comparison.title': '候选地比较',
   'comparison.count': '候选地 {value}/4',
   'comparison.add': '加入所选地块',
