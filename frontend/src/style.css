@@ -367,7 +367,7 @@ button:disabled {
 }
 
 .world-svg .cell {
-  transition: fill 0.32s ease, opacity 0.3s ease;
+  transition: fill 0.32s ease;
   cursor: crosshair;
   stroke: rgb(var(--ink-rgb) / 0.03);
   stroke-width: 0.4;
@@ -379,8 +379,9 @@ button:disabled {
 }
 
 @keyframes cell-reveal {
-  from { opacity: 0; filter: brightness(1.8); }
-  to { opacity: 1; filter: brightness(1); }
+  /* Animate the paint itself so finishing never tears down an SVG filter layer. */
+  from { opacity: 0; fill: color-mix(in srgb, var(--cell-fill), white 45%); }
+  to { opacity: 1; fill: var(--cell-fill); }
 }
 
 .world-svg .relief path {
@@ -2236,6 +2237,7 @@ button:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .world-svg.revealing .cell { animation-delay: 0ms !important; }
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;

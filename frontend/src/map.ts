@@ -147,7 +147,7 @@ export class MapView {
   private hoverId?: number;
   private previewId?: number;
   private flight = 0;
-  private revealTimer?: ReturnType<typeof setTimeout>;
+  private lastRevealCell?: SVGPolygonElement;
   onSelect: (cell: Cell) => void = () => {};
   onZoom: (scale: number) => void = () => {};
   /** Pointer hover over a cell (undefined when leaving the map or dragging). */
@@ -158,6 +158,12 @@ export class MapView {
   constructor(container: HTMLElement) {
     this.element = svg('svg', { viewBox: '0 0 1600 1000', role: 'img', 'aria-label': t('map.accessible') });
     this.element.classList.add('world-svg');
+    this.element.addEventListener('animationend', (event) => {
+      if (event.animationName === 'cell-reveal' && event.target === this.lastRevealCell) {
+        this.element.classList.remove('revealing');
+        this.lastRevealCell = undefined;
+      }
+    }, { signal: this.events.signal });
     this.surface.className = 'map-surface';
     this.gpuHost.className = 'map-gpu-layer';
     this.labels.className = 'map-graticule-labels';
@@ -304,6 +310,8 @@ export class MapView {
   }
 
   setWorld(world: WorldMap): void {
+    this.element.classList.remove('revealing');
+    this.lastRevealCell = undefined;
     this.world = world;
     this.cancelFlight();
     this.hoverId = this.previewId = undefined;
@@ -315,12 +323,15 @@ export class MapView {
     for (const group of [this.polygons, this.borders, this.symbols, this.coastline, this.water, this.riverClip, this.centers, this.selection, this.hoverLayer, this.graticule]) group.replaceChildren();
     const cx = world.width / 2, cy = world.height / 2;
     const reach = Math.hypot(cx, cy);
+    let lastDelay = -1;
     for (const cell of world.cells) {
       const delay = Math.round(Math.hypot(cell.centroid.x - cx, cell.centroid.y - cy) / reach * 1100 + hash(cell.id) * 220);
+      const fill = cellFill(cell, this.layer, this.resource, this.month);
       const polygon = svg('polygon', {
-        points: points(cell.polygon), fill: cellFill(cell, this.layer, this.resource, this.month),
-        'data-cell': String(cell.id), class: cell.is_land ? 'cell land' : 'cell sea', style: `--d:${delay}ms`,
+        points: points(cell.polygon), fill,
+        'data-cell': String(cell.id), class: cell.is_land ? 'cell land' : 'cell sea', style: `--d:${delay}ms;--cell-fill:${fill}`,
       });
+      if (delay >= lastDelay) { lastDelay = delay; this.lastRevealCell = polygon; }
       this.paths.push(polygon);
       this.polygons.append(polygon);
       if (cell.is_land) this.riverClip.append(svg('polygon', { points: points(cell.polygon) }));
@@ -364,12 +375,10 @@ export class MapView {
         'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'data-river': String(river.id),
       }));
     }
-    // Ripple-in reveal from the map centre; removed afterwards so pans stay cheap.
-    clearTimeout(this.revealTimer);
-    this.element.classList.remove('revealing');
+    // Use the actual final animation end, not a wall-clock timeout that can cut
+    // off the reveal when rendering is delayed or the tab is in the background.
     void this.element.getBoundingClientRect();
-    this.element.classList.add('revealing');
-    this.revealTimer = setTimeout(() => this.element.classList.remove('revealing'), 2200);
+    if (this.lastRevealCell) this.element.classList.add('revealing');
     this.reset();
     this.placeLabels();
   }
@@ -378,7 +387,12 @@ export class MapView {
     this.layer = layer;
     this.resource = resource;
     if (!this.world) return;
-    for (const cell of this.world.cells) this.paths[cell.id].setAttribute('fill', cellFill(cell, layer, resource, this.month));
+    for (const cell of this.world.cells) {
+      const polygon = this.paths[cell.id];
+      const fill = cellFill(cell, layer, resource, this.month);
+      polygon.setAttribute('fill', fill);
+      polygon.style.setProperty('--cell-fill', fill);
+    }
     this.symbols.setAttribute('display', layer === 'terrain' ? '' : 'none');
   }
   setMonth(month?: number): void {
@@ -439,7 +453,6 @@ export class MapView {
 
   destroy(): void {
     this.cancelFlight();
-    clearTimeout(this.revealTimer);
     this.events.abort();
     this.observer.disconnect();
     this.unsubscribe();
