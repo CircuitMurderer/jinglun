@@ -165,7 +165,7 @@ export function App() {
         case 'b': event.preventDefault(); handleToggle('borders'); break;
         case 'g': event.preventDefault(); handleToggle('graticule'); break;
         case 'c': event.preventDefault(); handleToggle('centers'); break;
-        case 'd': event.preventDefault(); setLayer('construction'); break;
+        case '0': event.preventDefault(); setLayer('construction'); break;
         case ' ':
           // Space activates the focused control; only the map/background uses playback.
           if (target?.closest('button, a[href], summary, [role="button"], [role="radio"], [role="checkbox"]')) return;
@@ -195,7 +195,7 @@ export function App() {
           event.preventDefault();
           viewRef.current?.zoom(1 / 1.3);
           break;
-        case '0':
+        case 'home':
           event.preventDefault();
           viewRef.current?.reset();
           break;

@@ -133,4 +133,4 @@ GAME_DESIGN.md      综合游戏设计稿
 
 参考实现文档：[Voronoice](https://docs.rs/voronoice/0.2.0/voronoice/)、[Simplex](https://docs.rs/noise/0.9.0/noise/struct.Simplex.html)、[Axum](https://docs.rs/axum/latest/axum/)、[Vite](https://vite.dev/guide/)。
 
-自然环境基础现已完成至 0.6.0：新增地质／建设图层，保持一块一色；1—9 切换图层，D 查看建设，0 仍适应画布。模型、限制与后续收尾建议见 [地质、土壤与建设条件](docs/GEOLOGY_SOIL_CONSTRUCTION.md)。
+自然环境基础现已完成至 0.6.0：新增地质／建设图层，保持一块一色。界面修复版本 0.6.1 将十种图层快捷键统一为 1—9、0，其中 0 查看建设，Home 适应画布；地图生成器仍为 0.6.0。模型、限制与后续收尾建议见 [地质、土壤与建设条件](docs/GEOLOGY_SOIL_CONSTRUCTION.md)。

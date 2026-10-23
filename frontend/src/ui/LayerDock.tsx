@@ -66,7 +66,7 @@ export function LayerDock({ layer, resource, month, playing, onLayer, onResource
               {active && <motion.span layoutId="layer-pill" className="pill" transition={spring} />}
               <Icon name={icon} size={19} />
               <span className="label">{t(`layer.${id}`)}</span>
-              <kbd>{index === 9 ? 'D' : index + 1}</kbd>
+              <kbd>{(index + 1) % 10}</kbd>
             </button>
           );
         })}

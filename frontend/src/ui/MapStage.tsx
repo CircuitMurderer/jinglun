@@ -337,7 +337,7 @@ export function MapStage({ world, layer, resource, month, toggles, status, error
         <div className="tool-column glass">
           <button type="button" className="tool-button" onClick={() => viewRef.current?.zoom(1.3)} aria-label={t('map.zoomIn')} data-tip={`${t('map.zoomIn')} · +`}><Icon name="plus" size={17} /></button>
           <button type="button" className="tool-button" onClick={() => viewRef.current?.zoom(1 / 1.3)} aria-label={t('map.zoomOut')} data-tip={`${t('map.zoomOut')} · −`}><Icon name="minus" size={17} /></button>
-          <button type="button" className="tool-button" onClick={() => viewRef.current?.reset()} aria-label={t('map.reset')} data-tip={`${t('map.reset')} · 0`}><Icon name="fit" size={17} /></button>
+          <button type="button" className="tool-button" onClick={() => viewRef.current?.reset()} aria-label={t('map.reset')} data-tip={`${t('map.reset')} · Home`}><Icon name="fit" size={17} /></button>
         </div>
       </div>
 
