@@ -4,16 +4,19 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use voronoice::{BoundingBox, Point as VPoint, Voronoi, VoronoiBuilder};
 
+mod construction;
 mod environment;
+mod geology;
 mod hydrology;
 mod lakes;
 mod seasonal;
+mod soil;
 mod water;
 pub use environment::Environment;
 pub use seasonal::ClimateProfile;
 pub use water::GroundProfile;
 
-pub const GENERATOR_VERSION: &str = "0.5.0";
+pub const GENERATOR_VERSION: &str = "0.6.0";
 pub const WIDTH: f64 = 1600.0;
 pub const HEIGHT: f64 = 1000.0;
 
@@ -139,6 +142,11 @@ pub struct Cell {
     pub causes: Vec<&'static str>,
     pub flatness: u8,
     pub resources: Vec<Resource>,
+    pub geology_provinces: Vec<usize>,
+    pub geology_kind: &'static str,
+    pub minerals: Vec<geology::MineralOccurrence>,
+    pub soil_profile: soil::Soil,
+    pub construction: construction::Construction,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -150,6 +158,7 @@ pub struct Edge {
     pub end: Point,
     pub length: f64,
     pub kind: &'static str,
+    pub passage: construction::Passage,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -321,6 +330,11 @@ pub fn generate(config: MapConfig) -> Result<WorldMap, GenerationError> {
                 causes: vec![],
                 flatness: 0,
                 resources: vec![],
+                geology_provinces: vec![],
+                geology_kind: "ocean",
+                minerals: vec![],
+                soil_profile: soil::Soil::default(),
+                construction: construction::Construction::default(),
             }
         })
         .collect();
@@ -364,6 +378,7 @@ pub fn generate(config: MapConfig) -> Result<WorldMap, GenerationError> {
             end,
             length,
             kind: "sea",
+            passage: construction::Passage::default(),
         });
     }
     for cell in &mut cells {
@@ -379,6 +394,7 @@ pub fn generate(config: MapConfig) -> Result<WorldMap, GenerationError> {
             _ => "coast",
         };
     }
+    field.assign_passages(&cells, &mut edges);
     let environment = field.export();
 
     let land_cells = cells.iter().filter(|c| c.is_land).count();
@@ -584,6 +600,51 @@ mod tests {
             .unwrap();
             assert!(map.stats.land_cells > 0 && map.stats.sea_cells > 0);
             let budget = &map.environment.water_budget;
+            let sediment = &map.environment.sediment_budget;
+            assert!(
+                (sediment.eroded_m3
+                    - sediment.deposited_land_m3
+                    - sediment.trapped_lake_m3
+                    - sediment.ocean_export_m3
+                    - sediment.boundary_export_m3)
+                    .abs()
+                    < sediment.eroded_m3.max(1.0) * 1e-9
+            );
+            let mut mineral_totals = vec![0.0; map.environment.deposits.len()];
+            for cell in &map.cells {
+                let c = &cell.construction;
+                assert!(
+                    (c.buildable_fraction + c.conditional_fraction + c.unavailable_fraction - 1.0)
+                        .abs()
+                        < 1e-9
+                );
+                assert!(
+                    c.buildable_fraction + c.conditional_fraction
+                        <= cell.land_fraction - cell.lake_fraction + 1e-9
+                );
+                assert!(c.buildable_area_km2 >= 0.0 && c.buildable_area_km2 <= c.area_km2 + 1e-6);
+                assert!(c.cost_multiplier.is_none_or(|v| (1.0..=4.5).contains(&v)));
+                assert!((0.0..=300.0).contains(&cell.soil_profile.depth_cm));
+                for mineral in &cell.minerals {
+                    assert_eq!(
+                        mineral.kind,
+                        map.environment.deposits[mineral.deposit_id].kind
+                    );
+                    assert!(mineral.depth_m >= 0.0 && mineral.extraction_difficulty <= 100.0);
+                    mineral_totals[mineral.deposit_id] += mineral.reserve_units;
+                }
+            }
+            for (id, deposit) in map.environment.deposits.iter().enumerate() {
+                assert!(
+                    (mineral_totals[id] - deposit.reserve_units).abs()
+                        < deposit.reserve_units * 1e-9
+                );
+            }
+            assert!(
+                map.edges
+                    .iter()
+                    .all(|e| e.passage.distance_km > 0.0 && e.passage.distance_km.is_finite())
+            );
             let residual = budget.land_precipitation
                 - budget.land_evapotranspiration
                 - budget.groundwater_recharge

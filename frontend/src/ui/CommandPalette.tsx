@@ -82,7 +82,7 @@ export function CommandPalette({ open, world, onClose, onCell, onLayer, onPrevie
                     <div key={`l-${item.id}`} {...common}>
                       <span className="palette-icon"><Icon name={layers[item.index].icon} size={16} /></span>
                       <span className="palette-main">{t('palette.switchLayer')} · <b>{t(`layer.${item.id}`)}</b></span>
-                      <kbd>{item.index + 1}</kbd>
+                      <kbd>{item.index === 9 ? 'D' : item.index + 1}</kbd>
                     </div>
                   );
                 }
@@ -106,7 +106,7 @@ export function CommandPalette({ open, world, onClose, onCell, onLayer, onPrevie
 
 export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const rows: Array<[string[], string]> = [
-    [['1', '…', '8'], t('shortcuts.layers')],
+    [['1', '…', '9', 'D'], t('shortcuts.layers')],
     [['R'], t('shortcuts.rivers')],
     [['B'], t('shortcuts.borders')],
     [['G'], t('shortcuts.graticule')],

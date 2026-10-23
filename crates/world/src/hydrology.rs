@@ -65,6 +65,7 @@ pub struct WaterBudget {
 }
 
 pub(crate) struct Drainage {
+    pub sediment_trap: Vec<bool>,
     pub receiver: Vec<Option<usize>>,
     pub basin: Vec<usize>,
     pub filled: Vec<f64>,
@@ -433,6 +434,7 @@ pub(crate) fn drain(
         }
     }
     Drainage {
+        sediment_trap: depression_member,
         receiver,
         basin,
         filled,

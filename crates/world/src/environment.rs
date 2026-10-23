@@ -1,7 +1,10 @@
 //! Natural geography is sampled independently of the governance tessellation.
+use crate::construction::{self, KM_PER_MAP_UNIT, Site, WorldScale};
+use crate::geology::{Deposit, Geology, MineralOccurrence, Province};
 use crate::hydrology::{self, Drainage, Lake, River, WaterBudget};
 use crate::lakes::Basin;
 use crate::seasonal::{self, ClimateProfile};
+use crate::soil::{self, SedimentBudget, Soil};
 use crate::water::{GroundProfile, WaterSource};
 use crate::{Cell, HEIGHT, Point, Resource, Terrain, WIDTH, fbm, index};
 use noise::{NoiseFn, Simplex};
@@ -49,6 +52,10 @@ pub struct Environment {
     pub water_sources: Vec<WaterSource>,
     pub atmosphere_budget: AtmosphereBudget,
     pub water_budget: WaterBudget,
+    pub scale: WorldScale,
+    pub geology_provinces: Vec<Province>,
+    pub deposits: Vec<Deposit>,
+    pub sediment_budget: SedimentBudget,
 }
 
 #[derive(Clone, Debug)]
@@ -72,7 +79,10 @@ struct Sample {
     vegetation: &'static str,
 }
 pub(crate) struct Field {
-    seed: u64,
+    geology: Geology,
+    soils: Vec<Soil>,
+    sites: Vec<Site>,
+    sediment_budget: SedimentBudget,
     samples: Vec<Sample>,
     drainage: Drainage,
     atmosphere_budget: AtmosphereBudget,
@@ -262,38 +272,63 @@ impl Field {
         let flatness: Vec<u8> = (0..raw.len())
             .map(|id| local_flatness(&elevation, id, COLS, ROWS))
             .collect();
-        let profiles: Vec<ClimateProfile> = (0..raw.len())
-            .map(|id| {
-                let latitude = (0.5 - ((id / COLS) as f64 + 0.5) / ROWS as f64) * 150.0;
-                let continentality = 1.0 - (-(ocean_distance[id] as f64) / 18.0).exp();
-                // Root-zone capacity is a bounded terrain proxy, not measured soil depth.
-                let capacity = 80.0 + flatness[id] as f64 * 1.2;
-                let mut profile = seasonal::normals(
-                    temperature[id],
-                    rain[id],
-                    latitude,
-                    continentality,
-                    capacity,
-                );
-                if elevation[id] <= 0.0 {
-                    // Marine samples provide atmospheric normals only. Do not
-                    // invent terrestrial soil, crops or runoff over the ocean.
-                    for month in &mut profile.months {
-                        month.snowfall_mm = 0.0;
-                        month.snowmelt_mm = 0.0;
-                        month.evapotranspiration_mm = 0.0;
-                        month.runoff_mm = 0.0;
-                        month.recharge_mm = 0.0;
-                        month.soil_water_mm = 0.0;
+        let scale = WorldScale::new(DX, DY);
+        let geology = Geology::generate(seed, &elevation, COLS, ROWS, scale.sample_area_km2);
+        let profiles_for = |capacities: &[f64]| -> Vec<ClimateProfile> {
+            (0..raw.len())
+                .map(|id| {
+                    let latitude = (0.5 - ((id / COLS) as f64 + 0.5) / ROWS as f64) * 150.0;
+                    let continentality = 1.0 - (-(ocean_distance[id] as f64) / 18.0).exp();
+                    // Root-zone capacity is a bounded terrain proxy, not measured soil depth.
+                    let capacity = capacities[id];
+                    let mut profile = seasonal::normals(
+                        temperature[id],
+                        rain[id],
+                        latitude,
+                        continentality,
+                        capacity,
+                    );
+                    if elevation[id] <= 0.0 {
+                        // Marine samples provide atmospheric normals only. Do not
+                        // invent terrestrial soil, crops or runoff over the ocean.
+                        for month in &mut profile.months {
+                            month.snowfall_mm = 0.0;
+                            month.snowmelt_mm = 0.0;
+                            month.evapotranspiration_mm = 0.0;
+                            month.runoff_mm = 0.0;
+                            month.recharge_mm = 0.0;
+                            month.soil_water_mm = 0.0;
+                        }
+                        profile.growing_months = 0.0;
+                        profile.rainfed_months = 0.0;
+                        profile.snow_storage_change_mm = 0.0;
+                        profile.soil_storage_change_mm = 0.0;
                     }
-                    profile.growing_months = 0.0;
-                    profile.rainfed_months = 0.0;
-                    profile.snow_storage_change_mm = 0.0;
-                    profile.soil_storage_change_mm = 0.0;
-                }
-                profile
+                    profile
+                })
+                .collect()
+        };
+        let initial_capacity: Vec<f64> = (0..raw.len())
+            .map(|id| {
+                (soil::initial_depth(&geology.rocks[id], flatness[id]) * 1.2).clamp(20.0, 240.0)
             })
             .collect();
+        let preliminary = profiles_for(&initial_capacity);
+        let topology = hydrology::drain(&elevation, &preliminary, COLS, ROWS);
+        let (soils, sediment_budget) = soil::generate(
+            &geology.rocks,
+            &elevation,
+            &flatness,
+            &rain,
+            &temperature,
+            &topology,
+            scale.sample_area_km2,
+        );
+        let capacities: Vec<_> = soils
+            .iter()
+            .map(|s| s.water_capacity_mm.max(20.0))
+            .collect();
+        let profiles = profiles_for(&capacities);
         let pet: Vec<f64> = profiles.iter().map(ClimateProfile::pet).collect();
         let drainage = hydrology::drain(&elevation, &profiles, COLS, ROWS);
         let mut samples = Vec::with_capacity(raw.len());
@@ -330,18 +365,8 @@ impl Field {
             } else {
                 "bare"
             };
-            let (x, y) = (
-                (id % COLS) as f64 / COLS as f64,
-                (id / COLS) as f64 / ROWS as f64,
-            );
             let river_nearness = 1.0 - (drainage.river_distance[id].min(4) as f64 / 4.0);
-            let parent = 0.5 + fbm(&soil_noise, x * 3.0, y * 2.0, 3) * 0.3;
-            let organic = aridity.min(1.3) / 1.3 * 0.13;
-            let erosion = (1.0 - flatness as f64 / 100.0) * 0.28;
-            let soil = index(
-                parent + organic - erosion + river_nearness * flatness as f64 / 100.0 * 0.16
-                    - (rain[id] / 3500.0).clamp(0.0, 1.0) * 0.08,
-            );
+            let soil = soils[id].quality;
             let slope_factor = (flatness as f64 / 75.0).clamp(0.0, 1.0);
             let (rainfed, irrigable) = profiles[id].crop_opportunity();
             let agriculture = index(soil as f64 / 100.0 * slope_factor * rainfed);
@@ -388,6 +413,7 @@ impl Field {
                     && profiles[id].growing_months >= 3.0
                     && flatness > 35
                     && soil >= 30
+                    && soils[id].depth_cm >= 20.0
                     && (agriculture >= 25 || irrigation >= 15),
                 coastal: h > 0.0 && cardinal(id).any(|n| elevation[n] <= 0.0),
                 shadow: shadow[id],
@@ -398,8 +424,60 @@ impl Field {
                 vegetation,
             });
         }
+        let source_quality: BTreeMap<usize, [bool; 12]> = drainage
+            .sources
+            .iter()
+            .map(|s| {
+                (
+                    s.id,
+                    std::array::from_fn(|m| s.months[m].freshwater_ceiling > 0.0),
+                )
+            })
+            .collect();
+        let sites = (0..raw.len())
+            .map(|id| {
+                let mut channel_height = 200.0;
+                let (x, y) = (id % COLS, id / COLS);
+                for yy in y.saturating_sub(3)..=(y + 3).min(ROWS - 1) {
+                    for xx in x.saturating_sub(3)..=(x + 3).min(COLS - 1) {
+                        let next = yy * COLS + xx;
+                        if drainage.river_mask[next] || drainage.lake_mask[next] {
+                            channel_height = (elevation[id] - drainage.filled[next])
+                                .max(0.0)
+                                .min(channel_height);
+                        }
+                    }
+                }
+                let fresh = (0..12)
+                    .filter(|&m| {
+                        let ground = &drainage.groundwater[id].months[m];
+                        (ground.storage_mm > 1e-8 && ground.tds_mg_l < 1000.0)
+                            || (drainage.river_distance[id] <= 2
+                                && source_quality
+                                    .get(&drainage.basin[id])
+                                    .is_some_and(|s| s[m]))
+                    })
+                    .count() as f64
+                    / 12.0;
+                construction::site(
+                    flatness[id],
+                    drainage.lake_mask[id],
+                    elevation[id],
+                    &profiles[id],
+                    drainage.river_distance[id],
+                    channel_height,
+                    soils[id].depth_cm,
+                    samples[id].agriculture,
+                    fresh,
+                    samples[id].vegetation == "forest",
+                )
+            })
+            .collect();
         Self {
-            seed,
+            geology,
+            soils,
+            sites,
+            sediment_budget,
             samples,
             drainage,
             atmosphere_budget,
@@ -416,6 +494,18 @@ impl Field {
             lake_ids: BTreeSet<usize>,
             source_ids: BTreeSet<usize>,
             groundwater: GroundProfile,
+            provinces: BTreeMap<usize, usize>,
+            minerals: BTreeMap<usize, MineralOccurrence>,
+            mineral_grade: [f64; 5],
+            soil_profile: Soil,
+            dry: usize,
+            buildable: usize,
+            conditional: usize,
+            cost: f64,
+            flood: f64,
+            support: f64,
+            months: f64,
+            anchor: Option<(f64, Point)>,
             coastal: bool,
             elevation: f64,
             rain: f64,
@@ -472,6 +562,61 @@ impl Field {
                 continue;
             }
             a.land += 1;
+            *a.provinces
+                .entry(self.geology.rocks[id].province)
+                .or_default() += 1;
+            for (m, grade) in self.geology.rocks[id].grade.iter().enumerate() {
+                a.mineral_grade[m] += *grade as f64;
+            }
+            for occurrence in &self.geology.occurrences[id] {
+                let entry = a
+                    .minerals
+                    .entry(occurrence.deposit_id)
+                    .or_insert(MineralOccurrence {
+                        deposit_id: occurrence.deposit_id,
+                        kind: occurrence.kind,
+                        reserve_units: 0.0,
+                        grade_index: 0.0,
+                        depth_m: 0.0,
+                        extraction_difficulty: 0.0,
+                    });
+                entry.reserve_units += occurrence.reserve_units;
+                entry.grade_index += occurrence.grade_index * occurrence.reserve_units;
+                entry.depth_m += occurrence.depth_m * occurrence.reserve_units;
+                entry.extraction_difficulty += (occurrence.extraction_difficulty
+                    + self.sites[id].cost * 5.0
+                    + if self.drainage.lake_mask[id] {
+                        20.0
+                    } else {
+                        0.0
+                    })
+                .min(100.0)
+                    * occurrence.reserve_units;
+            }
+            if !self.drainage.lake_mask[id] {
+                let site = &self.sites[id];
+                a.dry += 1;
+                a.soil_profile.add(&self.soils[id]);
+                a.buildable += usize::from(site.tier == 2);
+                a.conditional += usize::from(site.tier == 1);
+                if site.tier > 0 {
+                    a.cost += site.cost;
+                }
+                a.flood += site.flood as f64;
+                a.support += site.support as f64;
+                a.months += site.months;
+                let point = Point {
+                    x: (id % COLS) as f64 * DX + DX / 2.0,
+                    y: (id / COLS) as f64 * DY + DY / 2.0,
+                };
+                let score = site.cost
+                    + ((point.x - cells[owner].centroid.x)
+                        .hypot(point.y - cells[owner].centroid.y))
+                        / 100.0;
+                if a.anchor.as_ref().is_none_or(|(best, _)| score < *best) {
+                    a.anchor = Some((score, point));
+                }
+            }
             a.lakes += usize::from(self.drainage.lake_mask[id]);
             a.closed += usize::from(self.drainage.terminal[id] == "closed_basin");
             a.lake_ids.extend(self.drainage.lake_id[id]);
@@ -497,7 +642,6 @@ impl Field {
             *a.moisture.entry(s.moisture).or_default() += 1;
             *a.vegetation.entry(s.vegetation).or_default() += 1;
         }
-        let geology = Simplex::new(self.seed as u32 ^ 0x9f44);
         let sources: BTreeMap<_, _> = self.drainage.sources.iter().map(|s| (s.id, s)).collect();
         for (cell, a) in cells.iter_mut().zip(aggregates.iter_mut()) {
             // Very tiny unrelaxed cells can contain no raster centre. A single
@@ -517,6 +661,11 @@ impl Field {
                     a.source_ids.insert(self.drainage.basin[y * COLS + x]);
                     a.flatness = s.flatness as f64;
                     a.soil = s.soil as f64;
+                    a.provinces
+                        .insert(self.geology.rocks[y * COLS + x].province, 1);
+                    if !self.drainage.lake_mask[y * COLS + x] {
+                        a.soil_profile = self.soils[y * COLS + x].clone();
+                    }
                     a.agriculture = s.agriculture as f64;
                     a.irrigation = s.irrigation as f64;
                     a.aridity = s.rain / s.pet;
@@ -538,6 +687,39 @@ impl Field {
                     a.vegetation.insert(s.vegetation, 1);
                 }
             }
+            cell.construction.area_km2 = cell.area * KM_PER_MAP_UNIT.powi(2);
+            cell.construction.buildable_fraction = a.buildable as f64 / a.total as f64;
+            cell.construction.conditional_fraction = a.conditional as f64 / a.total as f64;
+            cell.construction.unavailable_fraction =
+                1.0 - cell.construction.buildable_fraction - cell.construction.conditional_fraction;
+            cell.construction.buildable_area_km2 =
+                cell.construction.area_km2 * cell.construction.buildable_fraction;
+            cell.construction.cost_multiplier = (a.buildable + a.conditional > 0)
+                .then(|| a.cost / (a.buildable + a.conditional) as f64);
+            if a.dry > 0 {
+                a.soil_profile.average(a.dry as f64);
+                a.soil_profile.quality = (a.soil / a.dry as f64).round() as u8;
+                cell.construction.flood_risk = (a.flood / a.dry as f64).round() as u8;
+                cell.construction.natural_support_index = (a.support / a.dry as f64).round() as u8;
+                cell.construction.construction_months = a.months / a.dry as f64;
+            }
+            cell.soil_profile = a.soil_profile.clone();
+            cell.construction.land_anchor = a.anchor.map(|(_, p)| p);
+            cell.geology_provinces = a.provinces.keys().copied().collect();
+            if let Some((&id, _)) = a.provinces.iter().max_by_key(|(id, n)| (**n, **id)) {
+                cell.geology_kind = self.geology.provinces[id].kind;
+            }
+            cell.minerals = a
+                .minerals
+                .values()
+                .cloned()
+                .map(|mut m| {
+                    m.grade_index /= m.reserve_units;
+                    m.depth_m /= m.reserve_units;
+                    m.extraction_difficulty /= m.reserve_units;
+                    m
+                })
+                .collect();
             cell.land_fraction = a.land as f64 / a.total as f64;
             cell.lake_fraction = a.lakes as f64 / a.total as f64;
             cell.endorheic_land_fraction = if a.land == 0 {
@@ -588,7 +770,7 @@ impl Field {
             cell.groundwater = a.groundwater.clone();
             cell.water_source_ids = a.source_ids.iter().copied().collect();
             cell.flatness = (a.flatness / count).round() as u8;
-            cell.soil_quality = (a.soil / count).round() as u8;
+            cell.soil_quality = cell.soil_profile.quality;
             cell.agricultural_suitability = (a.agriculture / count).round() as u8;
             cell.irrigation_potential = (a.irrigation / count).round() as u8;
             cell.arable_fraction = a.arable as f64 / a.total as f64;
@@ -634,12 +816,6 @@ impl Field {
             if cell.causes.is_empty() {
                 cell.causes.push("regional_climate");
             }
-            let (x, y) = (cell.centroid.x / WIDTH, cell.centroid.y / HEIGHT);
-            let ore = |offset: f64, threshold: f64| {
-                ((fbm(&geology, x * 7.0 + offset, y * 4.5 + offset, 2) + 1.0) / 2.0 - threshold)
-                    .max(0.0)
-                    / (1.0 - threshold)
-            };
             let fraction = cell.land_fraction;
             let agriculture = cell.agricultural_suitability as f64 / 100.0;
             let water = (cell.aridity_index / 1.2).min(1.0);
@@ -684,11 +860,11 @@ impl Field {
                             0.35
                         },
                 ),
-                resource("stone", 0.2 + (1.0 - cell.flatness as f64 / 100.0) * 0.7),
-                resource("coal", ore(0.0, 0.52)),
-                resource("iron", ore(19.4, 0.5)),
-                resource("oil", ore(41.7, 0.59)),
-                resource("rare_earth", ore(73.1, 0.64)),
+                resource("stone", a.mineral_grade[0] / count / 100.0),
+                resource("coal", a.mineral_grade[1] / count / 100.0),
+                resource("iron", a.mineral_grade[2] / count / 100.0),
+                resource("oil", a.mineral_grade[3] / count / 100.0),
+                resource("rare_earth", a.mineral_grade[4] / count / 100.0),
                 resource(
                     "freshwater",
                     (water * fresh_ground * 0.6
@@ -696,6 +872,34 @@ impl Field {
                         .min(1.0),
                 ),
             ];
+        }
+    }
+
+    pub fn assign_passages(&self, cells: &[Cell], edges: &mut [crate::Edge]) {
+        let elevation: Vec<_> = self.samples.iter().map(|s| s.elevation).collect();
+        let flatness: Vec<_> = self.samples.iter().map(|s| s.flatness).collect();
+        for edge in edges {
+            if let (Some(a), Some(b)) = (
+                cells[edge.a].construction.land_anchor,
+                cells[edge.b].construction.land_anchor,
+            ) {
+                edge.passage = construction::corridor(
+                    a,
+                    b,
+                    &elevation,
+                    &flatness,
+                    &self.drainage.lake_mask,
+                    &self.drainage.river_mask,
+                    COLS,
+                    ROWS,
+                    WIDTH,
+                    HEIGHT,
+                );
+            } else {
+                edge.passage.distance_km = (cells[edge.a].centroid.x - cells[edge.b].centroid.x)
+                    .hypot(cells[edge.a].centroid.y - cells[edge.b].centroid.y)
+                    * KM_PER_MAP_UNIT;
+            }
         }
     }
 
@@ -865,6 +1069,10 @@ impl Field {
             water_sources: self.drainage.sources.clone(),
             atmosphere_budget: self.atmosphere_budget.clone(),
             water_budget: self.drainage.budget.clone(),
+            scale: WorldScale::new(DX, DY),
+            geology_provinces: self.geology.provinces.clone(),
+            deposits: self.geology.deposits.clone(),
+            sediment_budget: self.sediment_budget.clone(),
         }
     }
 }

@@ -20,16 +20,20 @@ export async function generateMap(config: MapConfig): Promise<MapResponse> {
       const code = data?.error?.code;
       throw new ApiError(typeof code === 'string' && isMessageKey(code) ? code : 'error.generation', data?.error?.params ?? {});
     }
-    if (!data?.map || data.map.generator_version !== '0.5.0' || !Array.isArray(data.map.cells)
+    if (!data?.map || data.map.generator_version !== '0.6.0' || !Array.isArray(data.map.cells)
       || data.map.cells.length !== config.cell_count || !Array.isArray(data.map.edges)
       || !Number.isFinite(data.map.width) || !Number.isFinite(data.meta?.generation_ms)
       || !Array.isArray(data.map.environment?.layers) || !Array.isArray(data.map.environment?.rivers)
+      || !Number.isFinite(data.map.environment?.scale?.water_unit_m3)
+      || !Array.isArray(data.map.environment?.deposits) || !Array.isArray(data.map.environment?.geology_provinces)
       || !Array.isArray(data.map.environment?.water_sources)
       || !data.map.environment.water_sources.every((source: {months?: unknown[]}) => Array.isArray(source.months) && source.months.length === 12)
       || !data.map.environment.rivers.every((river: {monthly_flow?: unknown[]; monthly_flow_index?: unknown[]}) => river.monthly_flow?.length === 12 && river.monthly_flow_index?.length === 12)
       || !Array.isArray(data.map.environment?.basins)
       || !data.map.environment.basins.every((basin: {months?: unknown[]}) => Array.isArray(basin.months) && basin.months.length === 12)
       || !data.map.cells.every((cell: Cell) => Array.isArray(cell.climate?.months)
+        && Number.isFinite(cell.construction?.buildable_fraction) && Number.isFinite(cell.soil_profile?.depth_cm)
+        && Array.isArray(cell.minerals) && Array.isArray(cell.geology_provinces)
         && Array.isArray(cell.water_source_ids) && cell.groundwater?.months?.length === 12
         && Number.isFinite(cell.endorheic_land_fraction) && Array.isArray(cell.lake_ids)
         && cell.climate.months.length === 12 && cell.climate.months.every((month) =>

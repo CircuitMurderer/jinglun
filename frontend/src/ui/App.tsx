@@ -154,7 +154,7 @@ export function App() {
       }
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const key = event.key;
-      if (key >= '1' && key <= '8') {
+      if (key >= '1' && key <= '9') {
         event.preventDefault();
         const next = layers[Number(key) - 1].id;
         setLayer(next);
@@ -165,6 +165,7 @@ export function App() {
         case 'b': event.preventDefault(); handleToggle('borders'); break;
         case 'g': event.preventDefault(); handleToggle('graticule'); break;
         case 'c': event.preventDefault(); handleToggle('centers'); break;
+        case 'd': event.preventDefault(); setLayer('construction'); break;
         case ' ':
           // Space activates the focused control; only the map/background uses playback.
           if (target?.closest('button, a[href], summary, [role="button"], [role="radio"], [role="checkbox"]')) return;

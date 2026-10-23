@@ -9,6 +9,7 @@ export const layers: Array<{ id: Layer; icon: IconName }> = [
   { id: 'temperature', icon: 'temperature' }, { id: 'rainfall', icon: 'rain' },
   { id: 'water', icon: 'drop' }, { id: 'soil', icon: 'soil' },
   { id: 'agriculture', icon: 'wheat' }, { id: 'resources', icon: 'diamond' },
+  { id: 'geology', icon: 'layers' }, { id: 'construction', icon: 'target' },
 ];
 export const isClimateLayer = (layer: Layer) => layer === 'temperature' || layer === 'rainfall' || layer === 'water';
 

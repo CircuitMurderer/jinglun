@@ -1,4 +1,4 @@
-import type { Cell, Layer, Point, ResourceKind, Terrain, WorldMap } from './types';
+import type { Cell, GeologyKind, Layer, Point, ResourceKind, Terrain, WorldMap } from './types';
 import { t } from './i18n';
 import { MapCamera, screenTransform } from './map-camera';
 import { RiverOverlay } from './river-overlay';
@@ -22,6 +22,12 @@ export function terrainColor(terrain: Terrain): string {
   return (getThemeSnapshot().resolved === 'light' ? lightTerrainColors : terrainColors)[terrain];
 }
 
+export const geologyColors = { sedimentary: '#aa9266', craton: '#8271ac', orogenic: '#a2685a', igneous: '#557f88' };
+const lightGeologyColors = { sedimentary: '#e6d3a4', craton: '#c5b8df', orogenic: '#dfafa1', igneous: '#9cc8c5' };
+export function geologyColor(kind: GeologyKind): string {
+  return kind === 'ocean' ? terrainColor('deep_ocean') : (getThemeSnapshot().resolved === 'light' ? lightGeologyColors : geologyColors)[kind];
+}
+
 type Ramp = ReadonlyArray<readonly [number, string]>;
 export const ramps = {
   elevationSea: [[0, '#050f1c'], [1, '#1d4c69']],
@@ -32,6 +38,7 @@ export const ramps = {
   soil: [[0, '#2d2620'], [0.5, '#8d6a42'], [1, '#f0c178']],
   agriculture: [[0, '#26302a'], [0.5, '#4f8f3c'], [1, '#d4f57c']],
   resources: [[0, '#1c2236'], [0.35, '#5b3fc4'], [0.7, '#e0559f'], [1, '#ffd27a']],
+  construction: [[0, '#4c3947'], [0.4, '#8f795c'], [0.7, '#4c9a85'], [1, '#abdfbc']],
 } satisfies Record<string, Ramp>;
 
 const lightRamps = {
@@ -43,6 +50,7 @@ const lightRamps = {
   soil: [[0, '#f0e7d7'], [0.5, '#d3b68f'], [1, '#a97e50']],
   agriculture: [[0, '#e4e7d7'], [0.5, '#a8cb8b'], [1, '#5c985c']],
   resources: [[0, '#e8e5f0'], [0.35, '#b9a4e2'], [0.7, '#dd9cbb'], [1, '#efc982']],
+  construction: [[0, '#e3d5dd'], [0.4, '#e6d6b5'], [0.7, '#acd3bd'], [1, '#599e84']],
 } satisfies Record<keyof typeof ramps, Ramp>;
 
 function colorRamp(kind: keyof typeof ramps): Ramp {
@@ -69,7 +77,7 @@ function css(ramp: Ramp, from = 0, to = 1): string {
   return ramp.map(([p, c]) => `${c} ${((from + p * (to - from)) * 100).toFixed(1)}%`).join(',');
 }
 /** CSS gradient that matches the fill function, for legends. */
-export function legendGradient(layer: Exclude<Layer, 'terrain'>): string {
+export function legendGradient(layer: Exclude<Layer, 'terrain' | 'geology'>): string {
   if (layer === 'elevation') return `linear-gradient(90deg,${css(colorRamp('elevationSea'), 0, 0.5)},${css(colorRamp('elevationLand'), 0.5, 1)})`;
   return `linear-gradient(90deg,${css(colorRamp(layer))})`;
 }
@@ -82,6 +90,8 @@ export function cellFill(cell: Cell, layer: Layer, resource: ResourceKind, month
   }
   if (!cell.is_land) return terrainColor(cell.terrain);
   if (cell.terrain === 'lake') return terrainColor('lake');
+  if (layer === 'geology') return geologyColor(cell.geology_kind);
+  if (layer === 'construction') return sample(colorRamp('construction'), cell.construction.buildable_fraction + cell.construction.conditional_fraction * 0.4);
   if (layer === 'temperature') {
     const temperature = month === undefined ? cell.temperature_c : cell.climate.months[month].temperature_c;
     return sample(colorRamp('temperature'), (temperature + 30) / 70);

@@ -2229,7 +2229,7 @@ button:disabled {
   .search-trigger { width: 34px; height: 34px; padding: 0; justify-content: center; }
   .minimap { display: none; }
   .hud-top-left { max-width: calc(100vw - 100px); }
-  .layer-dock { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); width: 100%; }
+  .layer-dock { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); width: 100%; }
   .layer-button { justify-content: center; padding: 7px 6px; }
   .layer-button .label { display: none; }
   .layer-button kbd { display: none; }
@@ -2251,3 +2251,8 @@ button:disabled {
 .water-metrics > div { flex-direction: column; align-items: flex-start; gap: 5px; }
 .water-metrics strong { white-space: nowrap; }
 .legend .note { max-width: 260px; margin: 6px 0 0; font-size: 10px; }
+
+.mineral-card { padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }
+.mineral-card > .climate-summary { margin-top: 10px; }
+.natural-corridors { display: grid; gap: 6px; margin: 10px 0; }
+.natural-corridors button { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px; padding: 8px; font-size: 11px; border: 1px solid var(--border-subtle); border-radius: 8px; background: rgb(var(--surface-soft-rgb) / 0.6); }

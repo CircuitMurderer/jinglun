@@ -29,6 +29,20 @@ export interface SourceMonth {
 export interface WaterSource { id: number; outlet: 'ocean' | 'boundary' | 'closed_basin'; months: SourceMonth[] }
 export type ResourceKind = 'grain' | 'livestock' | 'fiber' | 'timber' | 'stone' | 'coal' | 'iron' | 'oil' | 'rare_earth' | 'freshwater';
 export interface Resource { kind: ResourceKind; potential: number }
+export type GeologyKind = 'sedimentary' | 'craton' | 'orogenic' | 'igneous' | 'ocean';
+export interface MineralOccurrence {
+  deposit_id: number; kind: ResourceKind; reserve_units: number; grade_index: number;
+  depth_m: number; extraction_difficulty: number;
+}
+export interface SoilProfile {
+  depth_cm: number; sand_fraction: number; organic_percent: number; erosion_mm_year: number;
+  deposition_mm_year: number; water_capacity_mm: number; quality: number;
+}
+export interface Construction {
+  area_km2: number; buildable_fraction: number; conditional_fraction: number;
+  unavailable_fraction: number; buildable_area_km2: number; cost_multiplier: number | null;
+  flood_risk: number; natural_support_index: number; construction_months: number; land_anchor: Point | null;
+}
 export interface Cell {
   id: number;
   site: Point;
@@ -62,10 +76,16 @@ export interface Cell {
   causes: Array<'coastal_moisture' | 'rain_shadow' | 'water_deficit' | 'river_water' | 'irrigation_opportunity' | 'flat_plateau' | 'cold_limit' | 'steep_limit' | 'regional_climate' | 'snowmelt_supply' | 'seasonal_drought'>;
   flatness: number;
   resources: Resource[];
+  geology_kind: GeologyKind;
+  geology_provinces: number[];
+  minerals: MineralOccurrence[];
+  soil_profile: SoilProfile;
+  construction: Construction;
 }
 export interface Edge {
   id: number; a: number; b: number; start: Point; end: Point; length: number;
   kind: 'land' | 'sea' | 'coast';
+  passage: { kind: 'marine' | 'land' | 'mountain' | 'river_crossing' | 'lake_crossing' | 'sea_crossing'; distance_km: number; cost_multiplier: number | null; crosses_river: boolean; crosses_lake: boolean; crosses_sea: boolean };
 }
 export interface LakeMonth {
   inflow: number; evaporation: number; overflow: number; storage_change: number;
@@ -100,7 +120,11 @@ export interface WorldMap {
     lakes: Array<{id: number; path: string; area_fraction: number; spill_elevation_m: number; basin_id: number}>;
     basins: Basin[];
     water_sources: WaterSource[];
+    scale: { km_per_map_unit: number; sample_area_km2: number; water_unit_m3: number };
+    geology_provinces: Array<{ id: number; kind: GeologyKind; rock: 'sandstone_shale' | 'ancient_basement' | 'metamorphic' | 'granite_basalt' }>;
+    deposits: Array<{ id: number; kind: ResourceKind; province_id: number; area_km2: number; reserve_units: number; grade_index: number; depth_m: number }>;
+    sediment_budget: { reference_years: number; eroded_m3: number; deposited_land_m3: number; trapped_lake_m3: number; ocean_export_m3: number; boundary_export_m3: number };
   };
 }
 export interface MapResponse { map: WorldMap; meta: { generation_ms: number } }
-export type Layer = 'terrain' | 'elevation' | 'temperature' | 'rainfall' | 'water' | 'soil' | 'agriculture' | 'resources';
+export type Layer = 'terrain' | 'elevation' | 'temperature' | 'rainfall' | 'water' | 'soil' | 'agriculture' | 'resources' | 'geology' | 'construction';

@@ -4,6 +4,7 @@ import { latitudeAt, terrainColor } from '../map';
 import type { Cell, Layer, ResourceKind, WorldMap } from '../types';
 import { ClimateChart, Gauge, ResourceRadar } from './Charts';
 import { WaterPanel } from './WaterPanel';
+import { GeologyPanel, SoilPanel, ConstructionPanel } from './EnvironmentPanel';
 import { Icon } from './Icon';
 import { AnimatedNumber, locationKey } from './shared';
 
@@ -90,6 +91,9 @@ export function Inspector({ world, cell, month, layer, resource, onFocus, onPrev
 
           {hasLand ? <>
             <motion.section className="block" variants={section} custom={i++}>
+              <ConstructionPanel cell={cell} world={world} onFocus={onFocus} />
+            </motion.section>
+            <motion.section className="block" variants={section} custom={i++}>
               <h4>{t('inspector.components')}</h4>
               <div className="chips">
                 <span>{t(`landform.${cell.landform}`)}</span>
@@ -118,7 +122,7 @@ export function Inspector({ world, cell, month, layer, resource, onFocus, onPrev
                     <div><span>{t(month === undefined ? 'hydrology.meanLevel' : 'hydrology.level')}</span><strong>{t('unit.m', { value: number(level, 1) })}</strong></div>
                     <div><span>{t('hydrology.storage')}</span><strong>{percent(storage / Math.max(1, basin.capacity), 1)}</strong></div>
                     <div><span>{t('water.tdsUnitTitle')}</span><strong>{storage > 1e-8 ? number(period.reduce((sum, m) => sum + m.tds_mg_l * m.storage, 0) / period.reduce((sum, m) => sum + m.storage, 0)) : '—'}</strong></div>
-                    <div><span>{t('water.lakeSeepage')}</span><strong>{number(period.reduce((sum, m) => sum + m.seepage, 0))}</strong></div>
+                    <div><span>{t('water.lakeSeepage')}</span><strong>{number(period.reduce((sum, m) => sum + m.seepage, 0) * world.environment.scale.water_unit_m3 / 1_000_000, 1)}</strong></div>
                   </div>
                   <details className="climate-table-wrap"><summary>{t('hydrology.showMonths')}</summary>
                     <table className="climate-table"><caption>{t('hydrology.tableNote')}</caption>
@@ -134,6 +138,12 @@ export function Inspector({ world, cell, month, layer, resource, onFocus, onPrev
 
             <motion.section className="block" variants={section} custom={i++}>
               <WaterPanel cell={cell} world={world} month={month} onMonth={m => onMonth(m, 'water')} />
+            </motion.section>
+            <motion.section className="block" variants={section} custom={i++}>
+              <GeologyPanel cell={cell} world={world} onResource={onResource} />
+            </motion.section>
+            <motion.section className="block" variants={section} custom={i++}>
+              <SoilPanel cell={cell} />
             </motion.section>
 
             <motion.section className="block" variants={section} custom={i++}>

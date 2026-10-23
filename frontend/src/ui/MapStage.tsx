@@ -1,7 +1,7 @@
 import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { MapView, cellFill, latitudeAt, legendGradient, terrainColors, terrainColor } from '../map';
+import { MapView, cellFill, latitudeAt, legendGradient, terrainColors, terrainColor, geologyColors, geologyColor } from '../map';
 import { useTheme } from './ThemePicker';
 import { screenTransform } from '../map-camera';
 import { number, percent, t, type MessageKey } from '../i18n';
@@ -44,6 +44,8 @@ export function layerReading(cell: Cell, layer: Layer, resource: ResourceKind, m
     case 'soil': return [t('inspector.fertility'), cell.is_land ? number(cell.soil_quality) : '—'];
     case 'agriculture': return [t('inspector.agriculture'), cell.is_land ? number(cell.agricultural_suitability) : '—'];
     case 'resources': return [t(`resource.${resource}`), number(cell.resources.find((r) => r.kind === resource)?.potential ?? 0)];
+    case 'geology': return [t('layer.geology'), t(`geology.kind.${cell.geology_kind}`)];
+    case 'construction': return [t('land.buildable'), percent(cell.construction.buildable_fraction, 1)];
     default: return [t('inspector.elevation'), t('unit.m', { value: number(cell.elevation_m) })];
   }
 }
@@ -141,6 +143,7 @@ function Minimap({ world, layer, resource, month, viewRef }: { world: WorldMap; 
 
 /* ---------- Legend ---------- */
 function Legend({ world, layer, resource, month }: { world?: WorldMap; layer: Layer; resource: ResourceKind; month?: number }) {
+  if (layer === 'geology') return <div className="legend glass"><strong className="legend-title">{t('layer.geology')}</strong><div className="terrain-legend">{(Object.keys(geologyColors) as Array<keyof typeof geologyColors>).map(kind => <span key={kind}><i style={{ background: geologyColor(kind) }} />{t(`geology.kind.${kind}`)}</span>)}</div></div>;
   if (layer === 'terrain') {
     const present = new Set(world?.cells.map((cell) => cell.terrain) ?? []);
     const order = Object.keys(terrainColors) as Terrain[];
@@ -152,11 +155,12 @@ function Legend({ world, layer, resource, month }: { world?: WorldMap; layer: La
       </div>
     );
   }
-  const labels: Record<Exclude<Layer, 'terrain'>, readonly [MessageKey, MessageKey]> = {
+  const labels: Record<Exclude<Layer, 'terrain' | 'geology'>, readonly [MessageKey, MessageKey]> = {
     elevation: ['legend.elevationMin', 'legend.elevationMax'], rainfall: ['legend.rainfallMin', 'legend.rainfallUpper'],
     temperature: ['legend.temperatureMin', 'legend.temperatureMax'],
     water: ['legend.waterMin', 'legend.waterMax'], soil: ['legend.soilMin', 'legend.soilMax'],
     agriculture: ['legend.agricultureMin', 'legend.agricultureMax'], resources: ['legend.resourceMin', 'legend.resourceMax'],
+    construction: ['land.difficult', 'land.favorable'],
   };
   const [low, high] = labels[layer];
   const monthly = month !== undefined && (layer === 'temperature' || layer === 'rainfall');
@@ -170,6 +174,7 @@ function Legend({ world, layer, resource, month }: { world?: WorldMap; layer: La
       </AnimatePresence>
       <div className="legend-ramp" style={{ background: legendGradient(layer) }} />
       {layer === 'water' && <p className="note">{t('water.mapNote', { period: month === undefined ? t('climate.annual') : t('climate.month', { value: month + 1 }) })}</p>}
+      {layer === 'construction' && <p className="note">{t('land.mapNote')}</p>}
       <div className="legend-labels"><span>{t(low)}</span><span>{t(monthly && layer === 'rainfall' ? 'legend.monthRainfallUpper' : high)}</span></div>
     </div>
   );

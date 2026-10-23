@@ -10,6 +10,7 @@ export function WaterPanel({ cell, world, month, onMonth }: {
   const sources = world.environment.water_sources.filter(s => cell.water_source_ids.includes(s.id))
     .sort((a, b) => b.months.reduce((s, m) => s + m.freshwater_ceiling, 0) - a.months.reduce((s, m) => s + m.freshwater_ceiling, 0));
   const sourceNumbers = new Map(world.environment.water_sources.map((s, index) => [s.id, index + 1]));
+  const volume = (value: number) => number(value * world.environment.scale.water_unit_m3 / 1_000_000, 1);
   return <>
     <h4>{t('water.title')}</h4>
     <div className="chips"><span>{month === undefined ? t('climate.annual') : t('climate.month', { value: month + 1 })}</span></div>
@@ -39,14 +40,14 @@ export function WaterPanel({ cell, world, month, onMonth }: {
           <div className="chips"><span>{t('water.source', { value: sourceNumbers.get(source.id)! })}</span><span>{t(`water.outlet.${source.outlet}`)}</span>
             <span>{month === undefined ? t('water.freshMonths', { value: source.months.filter(m => m.quality === 'fresh').length }) : t(`water.quality.${source.months[month].quality}`)}</span></div>
           <div className="climate-summary water-metrics">
-            <div><span>{t('water.freshCeiling')}</span><strong>{number(ceiling)}</strong></div>
-            <div><span>{t('water.reserve')}</span><strong>{number(reserve)}</strong></div>
+            <div><span>{t('water.freshCeiling')}</span><strong>{volume(ceiling)}</strong></div>
+            <div><span>{t('water.reserve')}</span><strong>{volume(reserve)}</strong></div>
           </div>
           <details className="climate-table-wrap"><summary>{t('water.sourceTable')}</summary>
             <table className="climate-table"><caption>{t('water.sourceUnits')}</caption>
               <thead><tr><th>{t('climate.monthHeader')}</th><th>{t('water.freshCeiling')}</th><th>{t('water.tds')}</th><th>{t('water.quality')}</th></tr></thead>
               <tbody>{source.months.map((m, index) => <tr key={index} className={index === month ? 'selected-month' : undefined}>
-                <th scope="row">{t('climate.month', { value: index + 1 })}</th><td>{number(m.freshwater_ceiling)}</td><td>{m.quality === 'dry' ? '—' : number(m.tds_mg_l)}</td><td>{t(`water.quality.${m.quality}`)}</td>
+                <th scope="row">{t('climate.month', { value: index + 1 })}</th><td>{volume(m.freshwater_ceiling)}</td><td>{m.quality === 'dry' ? '—' : number(m.tds_mg_l)}</td><td>{t(`water.quality.${m.quality}`)}</td>
               </tr>)}</tbody>
             </table>
           </details>
