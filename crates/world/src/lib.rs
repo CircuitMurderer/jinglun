@@ -6,11 +6,12 @@ use voronoice::{BoundingBox, Point as VPoint, Voronoi, VoronoiBuilder};
 
 mod environment;
 mod hydrology;
+mod lakes;
 mod seasonal;
 pub use environment::Environment;
 pub use seasonal::ClimateProfile;
 
-pub const GENERATOR_VERSION: &str = "0.3.0";
+pub const GENERATOR_VERSION: &str = "0.4.0";
 pub const WIDTH: f64 = 1600.0;
 pub const HEIGHT: f64 = 1000.0;
 
@@ -119,6 +120,8 @@ pub struct Cell {
     pub climate: ClimateProfile,
     pub land_fraction: f64,
     pub lake_fraction: f64,
+    pub endorheic_land_fraction: f64,
+    pub lake_ids: Vec<usize>,
     pub landform: &'static str,
     pub thermal_zone: &'static str,
     pub moisture_zone: &'static str,
@@ -297,6 +300,8 @@ pub fn generate(config: MapConfig) -> Result<WorldMap, GenerationError> {
                 climate: ClimateProfile::default(),
                 land_fraction: 0.0,
                 lake_fraction: 0.0,
+                endorheic_land_fraction: 0.0,
+                lake_ids: vec![],
                 landform: "ocean",
                 thermal_zone: "temperate",
                 moisture_zone: "humid",
@@ -432,8 +437,32 @@ mod tests {
                 .any(|c| c.land_fraction > 0.0 && c.land_fraction < 1.0)
         );
         let w = &a.environment.water_budget;
+        for month in &w.months {
+            assert!(
+                (month.generated_runoff
+                    - month.lake_evaporation
+                    - month.ocean_outflow
+                    - month.boundary_outflow
+                    - month.lake_storage_change)
+                    .abs()
+                    < month.generated_runoff.max(1.0) * 1e-9
+            );
+        }
+        for cell in &a.cells {
+            assert!((0.0..=1.0).contains(&cell.endorheic_land_fraction));
+            assert!(
+                cell.lake_ids
+                    .iter()
+                    .all(|&id| id < a.environment.lakes.len())
+            );
+        }
         assert!(
-            (w.generated_runoff - w.lake_evaporation - w.ocean_outflow - w.boundary_outflow).abs()
+            (w.generated_runoff
+                - w.lake_evaporation
+                - w.ocean_outflow
+                - w.boundary_outflow
+                - w.lake_storage_change)
+                .abs()
                 < w.generated_runoff.max(1.0) * 1e-10
         );
         assert!(
@@ -528,7 +557,8 @@ mod tests {
                 (budget.generated_runoff
                     - budget.lake_evaporation
                     - budget.ocean_outflow
-                    - budget.boundary_outflow)
+                    - budget.boundary_outflow
+                    - budget.lake_storage_change)
                     .abs()
                     < budget.generated_runoff.max(1.0) * 1e-10
             );

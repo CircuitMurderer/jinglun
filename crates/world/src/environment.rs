@@ -1,10 +1,11 @@
 //! Natural geography is sampled independently of the governance tessellation.
 use crate::hydrology::{self, Drainage, Lake, River, WaterBudget};
+use crate::lakes::Basin;
 use crate::seasonal::{self, ClimateProfile};
 use crate::{Cell, HEIGHT, Point, Resource, Terrain, WIDTH, fbm, index};
 use noise::{NoiseFn, Simplex};
 use serde::Serialize;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt::Write;
 
 pub(crate) const COLS: usize = 256;
@@ -43,6 +44,7 @@ pub struct Environment {
     pub coast_path: String,
     pub rivers: Vec<River>,
     pub lakes: Vec<Lake>,
+    pub basins: Vec<Basin>,
     pub atmosphere_budget: AtmosphereBudget,
     pub water_budget: WaterBudget,
 }
@@ -291,8 +293,7 @@ impl Field {
             })
             .collect();
         let pet: Vec<f64> = profiles.iter().map(ClimateProfile::pet).collect();
-        let water: Vec<_> = profiles.iter().map(ClimateProfile::water).collect();
-        let drainage = hydrology::drain(&elevation, &water, &pet, COLS, ROWS);
+        let drainage = hydrology::drain(&elevation, &profiles, COLS, ROWS);
         let mut samples = Vec::with_capacity(raw.len());
         for id in 0..raw.len() {
             let h = elevation[id];
@@ -409,6 +410,8 @@ impl Field {
             total: usize,
             land: usize,
             lakes: usize,
+            closed: usize,
+            lake_ids: BTreeSet<usize>,
             coastal: bool,
             elevation: f64,
             rain: f64,
@@ -466,6 +469,8 @@ impl Field {
             }
             a.land += 1;
             a.lakes += usize::from(self.drainage.lake_mask[id]);
+            a.closed += usize::from(self.drainage.terminal[id] == "closed_basin");
+            a.lake_ids.extend(self.drainage.lake_id[id]);
             a.coastal |= s.coastal;
             a.rain += s.rain;
             a.temp += s.temperature;
@@ -509,6 +514,8 @@ impl Field {
                     a.coastal = s.coastal;
                     a.arable = usize::from(s.arable);
                     a.lakes = usize::from(self.drainage.lake_mask[y * COLS + x]);
+                    a.closed = usize::from(self.drainage.terminal[y * COLS + x] == "closed_basin");
+                    a.lake_ids.extend(self.drainage.lake_id[y * COLS + x]);
                     if a.lakes > 0 {
                         a.soil = 0.0;
                         a.agriculture = 0.0;
@@ -524,6 +531,12 @@ impl Field {
             }
             cell.land_fraction = a.land as f64 / a.total as f64;
             cell.lake_fraction = a.lakes as f64 / a.total as f64;
+            cell.endorheic_land_fraction = if a.land == 0 {
+                0.0
+            } else {
+                a.closed as f64 / a.land as f64
+            };
+            cell.lake_ids = a.lake_ids.iter().copied().collect();
             cell.is_land = cell.land_fraction >= 0.5;
             cell.is_coastal = a.coastal || (a.land > 0 && a.land < a.total);
             cell.elevation_m = (a.elevation / a.total as f64).round() as i32;
@@ -776,7 +789,7 @@ impl Field {
             }
         }
         let mut lakes = vec![];
-        for group in &self.drainage.lake_groups {
+        for (lake_id, group) in self.drainage.lake_groups.iter().enumerate() {
             let mut path = String::new();
             for &id in group {
                 write!(
@@ -792,6 +805,7 @@ impl Field {
                 path,
                 area_fraction: group.len() as f64 / self.samples.len() as f64,
                 spill_elevation_m: self.drainage.filled[group[0]].round() as i32,
+                basin_id: self.drainage.lake_basin_ids[lake_id],
             });
         }
         let land: Vec<_> = self.samples.iter().filter(|s| s.elevation > 0.0).collect();
@@ -812,6 +826,7 @@ impl Field {
             coast_path,
             rivers: self.drainage.rivers(COLS, DX, DY),
             lakes,
+            basins: self.drainage.basins.clone(),
             atmosphere_budget: self.atmosphere_budget.clone(),
             water_budget: self.drainage.budget.clone(),
         }

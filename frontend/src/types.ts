@@ -35,6 +35,8 @@ export interface Cell {
   climate: ClimateProfile;
   land_fraction: number;
   lake_fraction: number;
+  endorheic_land_fraction: number;
+  lake_ids: number[];
   landform: 'ocean' | 'lowland' | 'plateau' | 'hills' | 'mountains';
   thermal_zone: 'cold' | 'temperate' | 'warm';
   moisture_zone: 'arid' | 'semi_arid' | 'subhumid' | 'humid';
@@ -52,6 +54,14 @@ export interface Cell {
 export interface Edge {
   id: number; a: number; b: number; start: Point; end: Point; length: number;
   kind: 'land' | 'sea' | 'coast';
+}
+export interface LakeMonth {
+  inflow: number; evaporation: number; overflow: number; storage_change: number;
+  storage: number; water_level_m: number;
+}
+export interface Basin {
+  id: number; kind: 'dry' | 'closed' | 'seasonal' | 'overflow';
+  spill_elevation_m: number; capacity: number; initial_storage: number; months: LakeMonth[];
 }
 export interface WorldMap {
   generator_version: string;
@@ -73,8 +83,9 @@ export interface WorldMap {
     terrain_palette: Terrain[];
     layers: Array<{kind: Exclude<Layer, 'resources' | 'temperature'>; bands: Array<{value: number; path: string}>}>;
     coast_path: string;
-    rivers: Array<{id: number; points: Point[]; flow_index: number; basin_id: number; outlet: 'junction' | 'ocean' | 'lake' | 'boundary'}>;
-    lakes: Array<{id: number; path: string; area_fraction: number; spill_elevation_m: number}>;
+    rivers: Array<{id: number; points: Point[]; flow_index: number; basin_id: number; outlet: 'junction' | 'ocean' | 'lake' | 'boundary' | 'closed_basin'; annual_flow: number; monthly_flow: number[]}>;
+    lakes: Array<{id: number; path: string; area_fraction: number; spill_elevation_m: number; basin_id: number}>;
+    basins: Basin[];
   };
 }
 export interface MapResponse { map: WorldMap; meta: { generation_ms: number } }

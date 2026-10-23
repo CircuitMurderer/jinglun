@@ -98,6 +98,38 @@ export function Inspector({ world, cell, month, layer, resource, onFocus, onPrev
             </motion.section>
 
             <motion.section className="block" variants={section} custom={i++}>
+              <h4>{t('hydrology.title')}</h4>
+              <div className="climate-summary">
+                <div><span>{t('hydrology.closedShare')}</span><strong>{percent(cell.endorheic_land_fraction, 1)}</strong></div>
+                <div><span>{t('hydrology.lakes')}</span><strong>{number(cell.lake_ids.length)}</strong></div>
+              </div>
+              <p className="note">{t(cell.endorheic_land_fraction > 0 ? 'hydrology.closedNote' : 'hydrology.openNote')}</p>
+              {cell.lake_ids.map(id => {
+                const lake = world.environment.lakes.find(lake => lake.id === id);
+                const basin = world.environment.basins.find(basin => basin.id === lake?.basin_id);
+                if (!basin) return null;
+                const period = month === undefined ? basin.months : [basin.months[month]];
+                const level = period.reduce((sum, m) => sum + m.water_level_m, 0) / period.length;
+                const storage = period.reduce((sum, m) => sum + m.storage, 0) / period.length;
+                return <div className="lake-card" key={id}>
+                  <div className="chips"><span>{t('hydrology.lake', { value: id + 1 })}</span><span>{t(`hydrology.kind.${basin.kind}`)}</span><span>{month === undefined ? t('climate.annual') : t('climate.month', { value: month + 1 })}</span></div>
+                  <div className="climate-summary">
+                    <div><span>{t(month === undefined ? 'hydrology.meanLevel' : 'hydrology.level')}</span><strong>{t('unit.m', { value: number(level, 1) })}</strong></div>
+                    <div><span>{t('hydrology.storage')}</span><strong>{percent(storage / Math.max(1, basin.capacity), 1)}</strong></div>
+                  </div>
+                  <details className="climate-table-wrap"><summary>{t('hydrology.showMonths')}</summary>
+                    <table className="climate-table"><caption>{t('hydrology.tableNote')}</caption>
+                      <thead><tr><th>{t('climate.monthHeader')}</th><th>{t('hydrology.level')}</th><th>{t('hydrology.storage')}</th><th>{t('hydrology.spill')}</th></tr></thead>
+                      <tbody>{basin.months.map((m, index) => <tr key={index} className={index === month ? 'selected-month' : undefined}>
+                        <th scope="row">{t('climate.month', { value: index + 1 })}</th><td>{number(m.water_level_m, 1)}</td><td>{percent(m.storage / Math.max(1, basin.capacity), 1)}</td><td>{t(m.overflow > 0 ? 'hydrology.yes' : 'hydrology.no')}</td>
+                      </tr>)}</tbody>
+                    </table>
+                  </details>
+                </div>;
+              })}
+            </motion.section>
+
+            <motion.section className="block" variants={section} custom={i++}>
               <h4>{t('inspector.indices')}</h4>
               <div className="gauges">
                 <Gauge value={cell.flatness} label={t('inspector.flatness')} hue="var(--gauge-flat)" />

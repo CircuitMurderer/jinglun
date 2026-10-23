@@ -1598,6 +1598,12 @@ button:disabled {
 }
 
 /* ==================== Climate Chart & Table ==================== */
+.lake-card {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
 .climate-summary {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
