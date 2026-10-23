@@ -175,7 +175,9 @@ mod tests {
                 }
             })
             .collect();
-        let geology = crate::geology::Geology::generate(42, &elevation, cols, rows, 1.0);
+        let structure = crate::tectonics::Structure::generate(42, cols, rows);
+        let geology =
+            crate::geology::Geology::generate(42, &structure, &elevation, cols, rows, 1.0);
         let profiles = vec![
             crate::seasonal::normals(15.0, &[1000.0 / 12.0; 12], 30.0, 0.5, 100.0);
             elevation.len()

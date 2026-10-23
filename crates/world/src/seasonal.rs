@@ -1,7 +1,7 @@
 //! Monthly climate normals and a conservative reference-year land water bucket.
 //! This is a game-scale climatology, not weather, a crop model or a glacier model.
+use crate::thermal;
 use serde::Serialize;
-use std::f64::consts::TAU;
 
 #[derive(Clone, Copy, Debug, Default, Serialize, PartialEq)]
 pub struct MonthClimate {
@@ -123,6 +123,7 @@ impl ClimateProfile {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn normals(
     mean_c: f64,
     monthly_rain: &[f64; 12],
@@ -130,16 +131,28 @@ pub(crate) fn normals(
     continentality: f64,
     capacity: f64,
 ) -> ClimateProfile {
-    let mut result = ClimateProfile {
+    let profile = thermal::ThermalProfile::new(
+        mean_c,
+        latitude,
         continentality,
+        monthly_rain,
+        &thermal::solar_year(latitude),
+    );
+    with_thermal(&profile, monthly_rain, capacity)
+}
+
+pub(crate) fn with_thermal(
+    thermal: &thermal::ThermalProfile,
+    monthly_rain: &[f64; 12],
+    capacity: f64,
+) -> ClimateProfile {
+    let mut result = ClimateProfile {
+        continentality: thermal.continentality,
         ..ClimateProfile::default()
     };
-    let signed_latitude = latitude.to_radians().sin();
     for (month, m) in result.months.iter_mut().enumerate() {
-        let season = (TAU * (month as f64 - 6.0) / 12.0).cos();
-        m.temperature_c = mean_c + 22.0 * signed_latitude * (0.35 + 0.65 * continentality) * season;
-        m.potential_evapotranspiration_mm = (25.0 + (m.temperature_c + 5.0).max(0.0) * 3.0)
-            * (1.0 + 0.65 * signed_latitude * season);
+        m.temperature_c = thermal.temperature_c[month];
+        m.potential_evapotranspiration_mm = thermal.pet_mm[month];
     }
     let mut melt_capacity = [0.0; 12];
     for (month, m) in result.months.iter_mut().enumerate() {

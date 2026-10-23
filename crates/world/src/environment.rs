@@ -1,5 +1,4 @@
 //! Natural geography is sampled independently of the governance tessellation.
-use crate::atmosphere;
 use crate::cartography::{self, NaturalSurface};
 use crate::construction::{self, KM_PER_MAP_UNIT, Site, WorldScale};
 use crate::geology::{Deposit, Geology, MineralOccurrence, Province};
@@ -9,6 +8,7 @@ use crate::seasonal::{self, ClimateProfile};
 use crate::soil::{self, SedimentBudget, Soil};
 use crate::water::{GroundProfile, WaterSource};
 use crate::{Cell, HEIGHT, Point, Resource, Terrain, WIDTH, fbm, index};
+use crate::{atmosphere, ocean, tectonics, thermal};
 use noise::{NoiseFn, Simplex};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -18,6 +18,23 @@ pub(crate) const COLS: usize = 256;
 pub(crate) const ROWS: usize = 160;
 const DX: f64 = WIDTH / COLS as f64;
 const DY: f64 = HEIGHT / ROWS as f64;
+
+#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+pub struct ElevationRange {
+    pub mean: f64,
+    pub min: f64,
+    pub max: f64,
+}
+#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+pub struct CellGeography {
+    pub latitude_deg: f64,
+    pub area_km2: f64,
+    pub dry_land_area_km2: f64,
+    pub lake_area_km2: f64,
+    pub ocean_area_km2: f64,
+    /// Land sampling surface, including lake-bed elevation, excluding ocean.
+    pub land_elevation_m: Option<ElevationRange>,
+}
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct SurfaceBand {
@@ -64,8 +81,11 @@ pub struct Environment {
     pub water_budget: WaterBudget,
     pub scale: WorldScale,
     pub geology_provinces: Vec<Province>,
+    pub tectonic_regions: Vec<tectonics::Region>,
+    pub tectonic_boundaries: Vec<tectonics::Boundary>,
     pub deposits: Vec<Deposit>,
     pub sediment_budget: SedimentBudget,
+    pub ocean: ocean::OceanSummary,
 }
 
 #[derive(Clone, Debug)]
@@ -89,6 +109,8 @@ struct Sample {
     vegetation: &'static str,
 }
 pub(crate) struct Field {
+    ocean: ocean::Ocean,
+    structure: tectonics::Structure,
     geology: Geology,
     soils: Vec<Soil>,
     sites: Vec<Site>,
@@ -98,10 +120,6 @@ pub(crate) struct Field {
     atmosphere_budget: AtmosphereBudget,
 }
 
-fn smooth(value: f64, a: f64, b: f64) -> f64 {
-    let x = ((value - a) / (b - a)).clamp(0.0, 1.0);
-    x * x * (3.0 - 2.0 * x)
-}
 fn cardinal(id: usize) -> impl Iterator<Item = usize> {
     let (x, y) = (id % COLS, id / COLS);
     [
@@ -149,7 +167,7 @@ impl Field {
     pub fn generate(seed: u64, land_ratio: f64) -> Self {
         let continental = Simplex::new(seed as u32);
         let detail = Simplex::new((seed >> 32) as u32 ^ 0x139a);
-        let soil_noise = Simplex::new(seed as u32 ^ 0x751a);
+        let structure = tectonics::Structure::generate(seed, COLS, ROWS);
         let mut raw = vec![0.0; COLS * ROWS];
         for (id, value) in raw.iter_mut().enumerate() {
             let (x, y) = (
@@ -182,66 +200,68 @@ impl Field {
                 );
                 let u = (h - sea) / (high - sea).max(1e-9);
                 let ridge = 1.0 - detail.get([x * 6.0 + 7.0, y * 4.0 + 7.0]).abs();
-                let rugged = 30.0 + u.powf(1.25) * 2600.0 + ridge.powi(5) * u * 1100.0;
-                let plateau =
-                    smooth(fbm(&soil_noise, x * 2.5, y * 1.6, 2), 0.05, 0.3) * smooth(u, 0.16, 0.4);
-                (rugged * (1.0 - plateau)
-                    + (1550.0 + detail.get([x * 0.8, y * 0.8]) * 60.0) * plateau)
-                    .round()
+                tectonics::land_elevation(&structure.settings[id], u, ridge)
             })
             .collect();
+        let ocean = ocean::Ocean::generate(&elevation, COLS, ROWS);
         let atmosphere::Climate {
             rain: monthly_rain,
             shadow,
             budget: atmosphere_budget,
-        } = atmosphere::generate(&elevation, COLS, ROWS);
+        } = atmosphere::generate_with_ocean(&elevation, COLS, ROWS, Some(&ocean.profiles));
         let rain: Vec<f64> = monthly_rain
             .iter()
             .map(|months| months.iter().sum())
             .collect();
-        let temperature: Vec<f64> = elevation
-            .iter()
-            .enumerate()
-            .map(|(id, h)| {
-                let latitude = (((id / COLS) as f64 + 0.5) / ROWS as f64 - 0.5).abs() * 150.0;
-                31.0 - latitude * 0.6 - h.max(0.0) * 0.0058
+        // Radiation is shared by each latitude row; thermal/PET normals are
+        // evaluated once and reused by both soil-water passes.
+        let solar: Vec<_> = (0..ROWS)
+            .map(|y| thermal::solar_year((0.5 - (y as f64 + 0.5) / ROWS as f64) * 150.0))
+            .collect();
+        let heat: Vec<_> = (0..raw.len())
+            .map(|id| {
+                let latitude = (0.5 - ((id / COLS) as f64 + 0.5) / ROWS as f64) * 150.0;
+                let continentality = 1.0 - (-(ocean.distance[id] as f64) / 18.0).exp();
+                let base = thermal::ThermalProfile::new(
+                    thermal::mean_temperature(latitude, elevation[id], continentality),
+                    latitude,
+                    continentality,
+                    &monthly_rain[id],
+                    &solar[id / COLS],
+                );
+                let temperatures = if elevation[id] <= 0.0 {
+                    ocean.profiles[id].surface_temperature_c
+                } else {
+                    std::array::from_fn(|m| {
+                        base.temperature_c[m] + ocean.coastal_adjustment_c[id][m]
+                    })
+                };
+                thermal::ThermalProfile::from_months(
+                    temperatures,
+                    continentality,
+                    &monthly_rain[id],
+                    &solar[id / COLS],
+                )
             })
             .collect();
-        let mut ocean_distance = vec![usize::MAX; elevation.len()];
-        let mut queue = VecDeque::new();
-        for (id, &h) in elevation.iter().enumerate() {
-            if h <= 0.0 {
-                ocean_distance[id] = 0;
-                queue.push_back(id);
-            }
-        }
-        while let Some(id) = queue.pop_front() {
-            for next in cardinal(id) {
-                if ocean_distance[next] == usize::MAX {
-                    ocean_distance[next] = ocean_distance[id] + 1;
-                    queue.push_back(next);
-                }
-            }
-        }
+        let temperature: Vec<_> = heat.iter().map(|h| h.mean_c).collect();
         let flatness: Vec<u8> = (0..raw.len())
             .map(|id| local_flatness(&elevation, id, COLS, ROWS))
             .collect();
         let scale = WorldScale::new(DX, DY);
-        let geology = Geology::generate(seed, &elevation, COLS, ROWS, scale.sample_area_km2);
+        let geology = Geology::generate(
+            seed,
+            &structure,
+            &elevation,
+            COLS,
+            ROWS,
+            scale.sample_area_km2,
+        );
         let profiles_for = |capacities: &[f64]| -> Vec<ClimateProfile> {
             (0..raw.len())
                 .map(|id| {
-                    let latitude = (0.5 - ((id / COLS) as f64 + 0.5) / ROWS as f64) * 150.0;
-                    let continentality = 1.0 - (-(ocean_distance[id] as f64) / 18.0).exp();
-                    // Root-zone capacity is a bounded terrain proxy, not measured soil depth.
-                    let capacity = capacities[id];
-                    let mut profile = seasonal::normals(
-                        temperature[id],
-                        &monthly_rain[id],
-                        latitude,
-                        continentality,
-                        capacity,
-                    );
+                    let mut profile =
+                        seasonal::with_thermal(&heat[id], &monthly_rain[id], capacities[id]);
                     if elevation[id] <= 0.0 {
                         // Marine samples provide atmospheric normals only. Do not
                         // invent terrestrial soil, crops or runoff over the ocean.
@@ -428,6 +448,8 @@ impl Field {
             })
             .collect();
         Self {
+            ocean,
+            structure,
             geology,
             soils,
             sites,
@@ -462,6 +484,11 @@ impl Field {
             anchor: Option<(f64, Point)>,
             coastal: bool,
             elevation: f64,
+            land_elevation: f64,
+            land_min: f64,
+            land_max: f64,
+            ocean: ocean::OceanProfile,
+            sea_climate: ClimateProfile,
             rain: f64,
             temp: f64,
             flatness: f64,
@@ -513,9 +540,18 @@ impl Field {
             a.total += 1;
             a.elevation += s.elevation;
             if s.elevation <= 0.0 {
+                a.ocean.add(&self.ocean.profiles[id]);
+                a.sea_climate.add(&s.climate);
                 continue;
             }
             a.land += 1;
+            a.land_elevation += s.elevation;
+            a.land_min = if a.land == 1 {
+                s.elevation
+            } else {
+                a.land_min.min(s.elevation)
+            };
+            a.land_max = a.land_max.max(s.elevation);
             *a.provinces
                 .entry(self.geology.rocks[id].province)
                 .or_default() += 1;
@@ -606,8 +642,15 @@ impl Field {
                 let s = &self.samples[y * COLS + x];
                 a.total = 1;
                 a.elevation = s.elevation;
+                if s.elevation <= 0.0 {
+                    a.ocean = self.ocean.profiles[y * COLS + x].clone();
+                    a.sea_climate = s.climate.clone();
+                }
                 if s.elevation > 0.0 {
                     a.land = 1;
+                    a.land_elevation = s.elevation;
+                    a.land_min = s.elevation;
+                    a.land_max = s.elevation;
                     a.rain = s.rain;
                     a.temp = s.temperature;
                     a.climate = s.climate.clone();
@@ -619,6 +662,19 @@ impl Field {
                         .insert(self.geology.rocks[y * COLS + x].province, 1);
                     if !self.drainage.lake_mask[y * COLS + x] {
                         a.soil_profile = self.soils[y * COLS + x].clone();
+                        let site = &self.sites[y * COLS + x];
+                        a.dry = 1;
+                        a.buildable = usize::from(site.tier == 2);
+                        a.conditional = usize::from(site.tier == 1);
+                        a.cost = if site.tier > 0 { site.cost } else { 0.0 };
+                        a.flood = site.flood as f64;
+                        a.support = site.support as f64;
+                        a.months = site.months;
+                        let p = Point {
+                            x: (x as f64 + 0.5) * DX,
+                            y: (y as f64 + 0.5) * DY,
+                        };
+                        a.anchor = Some((site.cost, p));
                     }
                     a.agriculture = s.agriculture as f64;
                     a.irrigation = s.irrigation as f64;
@@ -685,18 +741,41 @@ impl Field {
             cell.is_land = cell.land_fraction >= 0.5;
             cell.is_coastal = a.coastal || (a.land > 0 && a.land < a.total);
             cell.elevation_m = (a.elevation / a.total as f64).round() as i32;
+            let area = cell.construction.area_km2;
+            cell.geography = CellGeography {
+                latitude_deg: 75.0 - cell.centroid.y / HEIGHT * 150.0,
+                area_km2: area,
+                dry_land_area_km2: area * (cell.land_fraction - cell.lake_fraction),
+                lake_area_km2: area * cell.lake_fraction,
+                ocean_area_km2: area * (1.0 - cell.land_fraction),
+                land_elevation_m: (a.land > 0).then(|| ElevationRange {
+                    mean: a.land_elevation / a.land as f64,
+                    min: a.land_min,
+                    max: a.land_max,
+                }),
+            };
+            if a.total > a.land {
+                a.ocean.average((a.total - a.land) as f64);
+                cell.ocean = Some(a.ocean.clone());
+            }
             if a.land == 0 {
                 cell.terrain = if cell.elevation_m > -650 {
                     Terrain::ShallowSea
                 } else {
                     Terrain::DeepOcean
                 };
-                let x = (cell.centroid.x / DX) as usize;
-                let y = (cell.centroid.y / DY) as usize;
-                let s = &self.samples[y.min(ROWS - 1) * COLS + x.min(COLS - 1)];
-                cell.temperature_c = (s.temperature * 10.0).round() / 10.0;
-                cell.rainfall_mm = s.rain.round() as u32;
-                cell.climate = s.climate.clone();
+                a.sea_climate.average(a.total as f64);
+                cell.temperature_c =
+                    (a.ocean.surface_temperature_c.iter().sum::<f64>() / 12.0 * 10.0).round()
+                        / 10.0;
+                cell.rainfall_mm = a
+                    .sea_climate
+                    .months
+                    .iter()
+                    .map(|m| m.precipitation_mm)
+                    .sum::<f64>()
+                    .round() as u32;
+                cell.climate = a.sea_climate.clone();
                 continue;
             }
             let count = a.land as f64;
@@ -890,6 +969,72 @@ impl Field {
         }
     }
 
+    /// Versioned digest of natural samples, independent of governance geometry.
+    /// Quantization avoids treating sub-micro-unit rounding as a different map.
+    fn fingerprint(&self) -> String {
+        let mut hash = 0xcbf29ce484222325u64;
+        for byte in crate::GENERATOR_VERSION.bytes() {
+            hash = (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3);
+        }
+        let mut add = |value: f64| {
+            for byte in ((value * 1e6).round() as i64).to_le_bytes() {
+                hash = (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3);
+            }
+        };
+        for value in [COLS as f64, ROWS as f64, WIDTH, HEIGHT, KM_PER_MAP_UNIT] {
+            add(value);
+        }
+        for (id, s) in self.samples.iter().enumerate() {
+            for value in [
+                s.elevation,
+                s.rain,
+                s.temperature,
+                s.pet,
+                s.flatness as f64,
+                s.soil as f64,
+                s.agriculture as f64,
+                s.irrigation as f64,
+                self.geology.rocks[id].province as f64,
+                f64::from(self.drainage.lake_mask[id]),
+            ] {
+                add(value);
+            }
+            for value in self.geology.rocks[id].grade {
+                add(value as f64);
+            }
+            let sea = &self.ocean.profiles[id];
+            for value in [sea.current_east, sea.current_north, sea.current_strength] {
+                add(value);
+            }
+            for (month, m) in s.climate.months.iter().enumerate() {
+                let ground = &self.drainage.groundwater[id].months[month];
+                for value in [
+                    m.temperature_c,
+                    m.precipitation_mm,
+                    m.snowfall_mm,
+                    m.snowmelt_mm,
+                    m.potential_evapotranspiration_mm,
+                    m.evapotranspiration_mm,
+                    m.runoff_mm,
+                    m.recharge_mm,
+                    m.soil_water_mm,
+                    sea.surface_temperature_c[month],
+                    sea.temperature_anomaly_c[month],
+                    ground.storage_mm,
+                    ground.tds_mg_l,
+                ] {
+                    add(value);
+                }
+            }
+        }
+        for deposit in &self.geology.deposits {
+            for value in [deposit.reserve_units, deposit.grade_index, deposit.depth_m] {
+                add(value);
+            }
+        }
+        format!("{hash:016x}")
+    }
+
     pub fn export(&self) -> Environment {
         let terrain: Vec<u8> = self
             .samples
@@ -975,20 +1120,7 @@ impl Field {
                 }
             }
         }
-        let mut fingerprint = 0xcbf29ce484222325u64;
-        for s in &self.samples {
-            for v in [
-                s.elevation.round() as i64,
-                s.rain.round() as i64,
-                (s.temperature * 10.0).round() as i64,
-                (s.climate.growing_months * 10.0).round() as i64,
-                s.climate.water().runoff.round() as i64,
-            ] {
-                for b in v.to_le_bytes() {
-                    fingerprint = (fingerprint ^ u64::from(b)).wrapping_mul(0x100000001b3);
-                }
-            }
-        }
+        let fingerprint = self.fingerprint();
         let mut lakes = vec![];
         for (lake_id, group) in self.drainage.lake_groups.iter().enumerate() {
             let mut path = String::new();
@@ -1014,7 +1146,7 @@ impl Field {
             terrain_palette: (0..=11).map(terrain_from_id).collect(),
             columns: COLS,
             rows: ROWS,
-            fingerprint: format!("{fingerprint:016x}"),
+            fingerprint,
             latitude_range: [-75.0, 75.0],
             land_ratio: land.len() as f64 / self.samples.len() as f64,
             landmasses,
@@ -1034,8 +1166,11 @@ impl Field {
             water_budget: self.drainage.budget.clone(),
             scale: WorldScale::new(DX, DY),
             geology_provinces: self.geology.provinces.clone(),
+            tectonic_regions: self.structure.regions.clone(),
+            tectonic_boundaries: self.structure.boundaries.clone(),
             deposits: self.geology.deposits.clone(),
             sediment_budget: self.sediment_budget.clone(),
+            ocean: self.ocean.summary.clone(),
         }
     }
 }
@@ -1076,6 +1211,20 @@ fn terrain_from_id(id: usize) -> Terrain {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fingerprint_tracks_monthly_changes_even_when_the_annual_mean_is_unchanged() {
+        let mut field = Field::generate(crate::hash_seed("指纹审计"), 0.45);
+        let original = field.fingerprint();
+        field.samples[0].climate.months[0].temperature_c += 1.0;
+        field.samples[0].climate.months[6].temperature_c -= 1.0;
+        assert_ne!(original, field.fingerprint());
+        field.samples[0].climate.months[0].temperature_c -= 1.0;
+        field.samples[0].climate.months[6].temperature_c += 1.0;
+        assert_eq!(original, field.fingerprint());
+        field.ocean.profiles[0].current_east += 0.1;
+        assert_ne!(original, field.fingerprint());
+    }
 
     #[test]
     fn high_plateau_is_flat_and_low_hills_are_not() {
@@ -1121,12 +1270,27 @@ mod tests {
                 low.iter().filter(|(_, s)| dry(s)).count() as f64 / low.len() as f64 * 100.0;
             let rain = land.iter().map(|(_, s)| s.rain).sum::<f64>() / land.len() as f64;
             let maximum = land.iter().map(|(_, s)| s.rain).fold(0.0, f64::max);
+            let mean_temp =
+                land.iter().map(|(_, s)| s.temperature).sum::<f64>() / land.len() as f64;
+            let mean_pet = land.iter().map(|(_, s)| s.pet).sum::<f64>() / land.len() as f64;
+            let mountains = land
+                .iter()
+                .filter(|(_, s)| s.landform == "mountains")
+                .count() as f64
+                / land.len() as f64
+                * 100.0;
+            let plateau = land.iter().filter(|(_, s)| s.landform == "plateau").count() as f64
+                / land.len() as f64
+                * 100.0;
             let b = &field.atmosphere_budget;
             let error = (b.evaporation_input - b.precipitation - b.boundary_export).abs()
                 / b.evaporation_input.max(1.0);
             assert!(error < 1e-9);
             println!(
-                "{seed}: land={ratio}, dry={dry_land:.1}%, equatorial_dry={dry_low:.1}%, rain={rain:.0}mm, max={maximum:.0}mm, budget_error={error:.2e}, time={:.0}ms",
+                "{seed}: land={ratio}, dry={dry_land:.1}%, equatorial_dry={dry_low:.1}%, rain={rain:.0}mm, max={maximum:.0}mm, T={mean_temp:.1}C, PET={mean_pet:.0}mm, mountains={mountains:.1}%, plateau={plateau:.1}%, SST={:.1}C, mean_abs_current_anomaly={:.2}C, max_abs_current_anomaly={:.2}C, budget_error={error:.2e}, time={:.0}ms",
+                field.ocean.summary.mean_surface_temperature_c,
+                field.ocean.summary.mean_abs_anomaly_c,
+                field.ocean.summary.max_abs_anomaly_c,
                 start.elapsed().as_secs_f64() * 1000.0
             );
         }

@@ -7,6 +7,7 @@ import { getThemeSnapshot } from './theme';
 import { naturalTexture } from './natural-detail';
 import { detailLayout } from './map-detail-layout';
 import { effectiveMapStyle, naturalTerrainPaints, type MapStyle } from './map-style';
+import { temperatureValue } from './climate-display';
 
 /** Base night-atlas palette. Daylight colors keep the same terrain categories. */
 export const terrainColors: Record<Terrain, string> = {
@@ -89,16 +90,13 @@ export function cellFill(cell: Cell, layer: Layer, resource: ResourceKind, month
   if (layer === 'terrain') return terrainColor(cell.terrain);
   if (layer === 'elevation') {
     if (!cell.is_land) return sample(colorRamp('elevationSea'), (cell.elevation_m + 4040) / 4040);
-    return sample(colorRamp('elevationLand'), cell.elevation_m / 3600);
+    return sample(colorRamp('elevationLand'), (cell.geography.land_elevation_m?.mean ?? cell.elevation_m) / 3600);
   }
+  if (layer === 'temperature') return sample(colorRamp('temperature'), (temperatureValue(cell, month) + 30) / 70);
   if (!cell.is_land) return terrainColor(cell.terrain);
   if (cell.terrain === 'lake') return terrainColor('lake');
   if (layer === 'geology') return geologyColor(cell.geology_kind);
   if (layer === 'construction') return sample(colorRamp('construction'), cell.construction.buildable_fraction + cell.construction.conditional_fraction * 0.4);
-  if (layer === 'temperature') {
-    const temperature = month === undefined ? cell.temperature_c : cell.climate.months[month].temperature_c;
-    return sample(colorRamp('temperature'), (temperature + 30) / 70);
-  }
   if (layer === 'rainfall') return sample(colorRamp('rainfall'), month === undefined
     ? cell.rainfall_mm / 2400 : cell.climate.months[month].precipitation_mm / 300);
   if (layer === 'water') return sample(colorRamp('water'), cell.aridity_index / 1.5);

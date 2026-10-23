@@ -1,13 +1,59 @@
 import { number, percent, t } from '../i18n';
 import type { Cell, ResourceKind, WorldMap } from '../types';
 
+export function GeographyPanel({ cell }: { cell: Cell }) {
+  const g = cell.geography, h = g.land_elevation_m;
+  return <>
+    <h4>{t('geo.title')}</h4>
+    <div className="climate-summary water-metrics">
+      {(['area_km2', 'dry_land_area_km2', 'lake_area_km2', 'ocean_area_km2'] as const).map(key =>
+        <div key={key}><span>{t(`geo.${key}`)}</span><strong>{t('land.km2', { value: number(g[key]) })}</strong></div>)}
+      {h && <>
+        <div><span>{t('geo.landMean')}</span><strong>{t('unit.m', { value: number(h.mean) })}</strong></div>
+        <div><span>{t('geo.landRange')}</span><strong>{number(h.min)}—{t('unit.m', { value: number(h.max) })}</strong></div>
+      </>}
+    </div>
+    <p className="note">{t('geo.note')}</p>
+  </>;
+}
+
+export function OceanPanel({ cell, month, onMonth }: { cell: Cell; month?: number; onMonth: (month: number) => void }) {
+  const sea = cell.ocean;
+  if (!sea) return null;
+  const mean = (values: number[]) => month === undefined ? values.reduce((sum, v) => sum + v, 0) / values.length : values[month];
+  const directions = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'] as const;
+  const bearing = (Math.atan2(sea.current_east, sea.current_north) * 180 / Math.PI + 360) % 360;
+  const direction = Math.hypot(sea.current_east, sea.current_north) < 0.04 ? 'variable' : directions[Math.round(bearing / 45) % 8];
+  const anomaly = mean(sea.temperature_anomaly_c);
+  return <>
+    <h4>{t('ocean.title')}</h4>
+    <div className="chips"><span>{month === undefined ? t('climate.annual') : t('climate.month', { value: month + 1 })}</span>
+      <span>{t(`ocean.direction.${direction}`)}</span></div>
+    <div className="climate-summary water-metrics">
+      <div><span>{t('ocean.surfaceTemperature')}</span><strong>{t('unit.celsius', { value: number(mean(sea.surface_temperature_c), 1) })}</strong></div>
+      <div><span>{t('ocean.anomaly')}</span><strong>{anomaly > 0 ? '+' : ''}{t('unit.celsius', { value: number(anomaly, 1) })}</strong></div>
+      <div><span>{t('ocean.strength')}</span><strong>{number(sea.current_strength * 100)}</strong></div>
+    </div>
+    <p className="note">{t('ocean.note')}</p>
+    <details className="climate-table-wrap"><summary>{t('ocean.months')}</summary>
+      <table className="climate-table"><thead><tr><th>{t('climate.monthHeader')}</th><th>{t('ocean.surfaceTemperature')}</th><th>{t('ocean.anomaly')}</th></tr></thead>
+        <tbody>{sea.surface_temperature_c.map((v, m) => <tr key={m} className={month === m ? 'selected-month' : undefined}>
+          <th scope="row"><button className="water-month" type="button" onClick={() => onMonth(m)}>{t('climate.month', { value: m + 1 })}</button></th>
+          <td>{number(v, 1)}</td><td>{number(sea.temperature_anomaly_c[m], 1)}</td>
+        </tr>)}</tbody>
+      </table>
+    </details>
+  </>;
+}
+
 export function GeologyPanel({ cell, world, onResource }: { cell: Cell; world: WorldMap; onResource: (kind: ResourceKind) => void }) {
   return <>
     <h4>{t('geology.title')}</h4>
     <div className="chips">{cell.geology_provinces.map(id => {
       const province = world.environment.geology_provinces[id];
-      return <span key={id}>{t(`geology.kind.${province.kind}`)} · {t(`geology.rock.${province.rock}`)}</span>;
+      return <span key={id}>{t('geology.region', { value: province.tectonic_region_id + 1 })} · {t(`geology.kind.${province.kind}`)} · {t(`geology.rock.${province.rock}`)}</span>;
     })}</div>
+    <p className="note">{t('geology.structureNote')}</p>
     <p className="note">{t('geology.note')}</p>
     {cell.minerals.map(m => <details className="climate-table-wrap mineral-card" key={m.deposit_id}>
       <summary>{t(`resource.${m.kind}`)} · {t('geology.deposit', { value: m.deposit_id + 1 })}</summary>

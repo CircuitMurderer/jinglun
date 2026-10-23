@@ -1,0 +1,18 @@
+{
+  "upstream_commit": "9194d47b497458360f907a5fd96135b63f526d42",
+  "integrated_tree": "c8955e15702bf4774de11c18947104e5e363c03f",
+  "generator_version": "0.9.0",
+  "config": {
+    "seed": "jinglun-040",
+    "cell_count": 100,
+    "relaxations": 2,
+    "land_ratio": 0.45
+  },
+  "excluded": [
+    "environment.natural_surface"
+  ],
+  "original_map_fields_equal": true,
+  "canonical_model_sha256": "846a9f764ed1011b3bc56b81e9dbe03b51a726cae21a4c370a685ff411220b57",
+  "natural_surface_bytes": 537034,
+  "method": "Generate both pinned Rust trees with the same config; compare complete JSON after removing only additive natural_surface."
+}

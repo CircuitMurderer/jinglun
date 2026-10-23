@@ -9,6 +9,7 @@ import { number, percent, t, type MessageKey } from '../i18n';
 import type { Cell, Layer, Point, ResourceKind, Terrain, WorldMap } from '../types';
 import { Icon, type IconName } from './Icon';
 import { initialCell, locationKey } from './shared';
+import { temperatureValue } from '../climate-display';
 
 export interface Toggles { water: boolean; borders: boolean; centers: boolean; graticule: boolean }
 export type Status = 'loading' | 'ready' | 'error';
@@ -35,9 +36,9 @@ function latitudeText(lat: number): string {
 
 export function layerReading(cell: Cell, layer: Layer, resource: ResourceKind, month?: number): [string, string] {
   switch (layer) {
-    case 'temperature': return month === undefined
-      ? [t('climate.annualTemperature'), t('unit.celsius', { value: number(cell.temperature_c, 1) })]
-      : [t('climate.monthTemperature', { value: month + 1 }), t('unit.celsius', { value: number(cell.climate.months[month].temperature_c, 1) })];
+    case 'temperature': return [!cell.is_land && cell.ocean ? t('ocean.surfaceTemperature')
+      : month === undefined ? t('climate.annualTemperature') : t('climate.monthTemperature', { value: month + 1 }),
+    t('unit.celsius', { value: number(temperatureValue(cell, month), 1) })];
     case 'rainfall': return month === undefined
       ? [t('climate.annualPrecipitation'), t('unit.mm', { value: number(cell.rainfall_mm) })]
       : [t('climate.monthPrecipitation', { value: month + 1 }), t('unit.mm', { value: number(cell.climate.months[month].precipitation_mm) })];
@@ -47,6 +48,9 @@ export function layerReading(cell: Cell, layer: Layer, resource: ResourceKind, m
     case 'resources': return [t(`resource.${resource}`), number(cell.resources.find((r) => r.kind === resource)?.potential ?? 0)];
     case 'geology': return [t('layer.geology'), t(`geology.kind.${cell.geology_kind}`)];
     case 'construction': return [t('land.buildable'), percent(cell.construction.buildable_fraction, 1)];
+    case 'elevation': return cell.is_land && cell.geography.land_elevation_m
+      ? [t('geo.landMean'), t('unit.m', { value: number(cell.geography.land_elevation_m.mean) })]
+      : [t('geo.seabedMean'), t('unit.m', { value: number(cell.elevation_m) })];
     default: return [t('inspector.elevation'), t('unit.m', { value: number(cell.elevation_m) })];
   }
 }
@@ -182,6 +186,7 @@ function Legend({ world, layer, resource, month, mapStyle }: { mapStyle: MapStyl
       <div className="legend-ramp" style={{ background: legendGradient(layer) }} />
       {layer === 'water' && <p className="note">{t('water.mapNote', { period: month === undefined ? t('climate.annual') : t('climate.month', { value: month + 1 }) })}</p>}
       {layer === 'construction' && <p className="note">{t('land.mapNote')}</p>}
+      {layer === 'temperature' && <p className="note">{t('ocean.mapNote')}</p>}
       <div className="legend-labels"><span>{t(low)}</span><span>{t(monthly && layer === 'rainfall' ? 'legend.monthRainfallUpper' : high)}</span></div>
     </div>
   );
