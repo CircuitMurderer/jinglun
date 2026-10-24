@@ -305,7 +305,7 @@ export function App() {
           </span>
         </div>
 
-        <div className={`telemetry${date && !debug ? ' has-round' : ''}`} aria-live="polite">
+        <div className="telemetry" aria-live="polite">
           <span className="telemetry-item">
             <span className={`status-dot ${status}`} />
             {date ?? (status === 'idle' ? t('entry.configure') : status === 'ready' ? t('map.ready') : status === 'loading' ? t('map.loading') : t('error.title'))}

@@ -222,7 +222,7 @@ button:disabled {
 }
 
 .atlas-shell[data-mode="gameplay"] .topbar { column-gap: 8px; }
-.telemetry.has-round { margin-left: auto; }
+.atlas-shell[data-mode="gameplay"] .telemetry { margin-left: auto; }
 
 .telemetry .sep {
   color: var(--text-muted);
@@ -2278,7 +2278,7 @@ button:disabled {
     --right-w: min(340px, 88vw);
   }
   .telemetry { display: none; }
-  .telemetry.has-round { display: flex; font-size: 11px; }
+  .atlas-shell[data-mode="gameplay"] .telemetry { display: flex; font-size: 11px; }
   .topbar { gap: 8px; padding: 0 10px; }
   .phase-badge, .topbar .divider, .search-trigger span, .search-trigger kbd { display: none; }
   .search-trigger { width: 34px; height: 34px; padding: 0; justify-content: center; }
