@@ -22,7 +22,6 @@ npm run dev
 - 页面：<http://127.0.0.1:5173>
 - 后端：<http://127.0.0.1:3001>
 - 首次运行会编译 Rust 后端；启动脚本等后端就绪后再启动页面，避免编译期间请求失败。
-- 自 0.9.1 起，`npm run dev` 和 `npm run dev:server` 默认使用 Rust release 优化构建；Rust 编译可能更久，前端仍保留 Vite 热更新。生成器数据版本仍为 0.9.0。
 - `Ctrl+C` 停止前后端。
 - 启动脚本会查找 `~/.cargo/bin/cargo`，无需修改全局 PATH。项目默认使用 `.cache/cargo` 缓存依赖；已设置 `CARGO_HOME` 时保留该设置。
 
@@ -73,7 +72,18 @@ npm run build:server      # Rust 后端 release 构建
 npm run fmt               # Rust 格式化
 ```
 
-目前开发服务由 Vite 代理 `/api` 到 Rust。生产部署需要静态站点服务与 `/api` 反向代理；尚未配置线上部署。`npm run preview` 可预览已构建前端，仍需启动 Rust 后端。
+生产环境由 Nginx 直接提供 `dist/` 静态文件，并将 `/api/` 反向代理到 release 后端：
+
+```sh
+./deploy/deploy-frontend.sh       # 构建前端、安装并重载 Nginx 配置
+./deploy/run-release-backend.sh   # 编译并前台运行 release 后端，适合放入 screen
+```
+
+前端脚本使用 ACL 仅授予 `www-data` 读取项目内 `dist/` 的权限；Ubuntu 首次使用前如缺少命令，请运行 `sudo apt install acl`。
+
+`npm run dev` 和 `npm run dev:server` 始终使用 Rust debug 构建；生产后端由上述独立脚本启动。
+
+开发服务由 Vite 代理 `/api` 到 Rust。`npm run preview` 可预览已构建前端，仍需启动 Rust 后端。
 
 开发服务运行时，可访问 <http://127.0.0.1:5173/tests/rendering.html>，手动验证真实 WebGL 上下文丢失、SVG 降级、重新启用和销毁重建。该验收页不是生产构建入口。
 

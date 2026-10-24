@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { launchRust, stopRust, root } from './rust.mjs';
 
-const backend = launchRust(['run', '--release', '-p', 'jinglun-server']);
+const backend = launchRust(['run', '-p', 'jinglun-server']);
 let frontend;
 let stopping = false;
 function stop(code = 0) {

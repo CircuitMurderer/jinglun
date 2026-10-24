@@ -1,7 +1,7 @@
 {
   "name": "jinglun",
   "private": true,
-  "version": "0.9.1",
+  "version": "0.9.2",
   "type": "module",
   "engines": {
     "node": ">=22.12"
@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:web": "vite --config frontend/vite.config.ts",
-    "dev:server": "node scripts/rust.mjs run --release -p jinglun-server",
+    "dev:server": "node scripts/rust.mjs run -p jinglun-server",
     "build": "npm run check && vite build --config frontend/vite.config.ts",
     "build:server": "node scripts/rust.mjs build --release -p jinglun-server",
     "check": "tsc --noEmit -p frontend/tsconfig.json",
