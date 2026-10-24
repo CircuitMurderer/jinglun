@@ -392,7 +392,6 @@ export function MapStage({ world, debug, inGame, showLegend, onNextRound, layer,
       </div>}
 
       <div className="hud hud-bottom">{children}</div>
-      {world && <div className="instructions" aria-hidden="true">{t(debug ? 'map.instructions' : 'entry.instructions')}</div>}
       {onNextRound && <div className="hud hud-next-round">
         <button type="button" className="next-round-button" onClick={onNextRound} aria-label={t('round.next')} data-tip={t('round.next')}>
           <Icon name="play" size={25} fill="currentColor" strokeWidth={0} />

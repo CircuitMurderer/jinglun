@@ -221,6 +221,9 @@ button:disabled {
   gap: 6px;
 }
 
+.atlas-shell[data-mode="gameplay"] .topbar { column-gap: 8px; }
+.telemetry.has-round { margin-left: auto; }
+
 .telemetry .sep {
   color: var(--text-muted);
 }
@@ -589,17 +592,6 @@ button:disabled {
   left: var(--hud-left);
   right: var(--hud-right);
   bottom: 18px;
-}
-
-.instructions {
-  position: absolute;
-  left: var(--hud-left);
-  bottom: 16px;
-  z-index: 6;
-  pointer-events: none;
-  font-size: 11.5px;
-  color: var(--text-muted);
-  transition: left 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Legend & Readout */
@@ -2266,7 +2258,7 @@ button:disabled {
 }
 
 @media (max-width: 1180px) {
-  .hide-sm, .brand-tagline, .instructions { display: none; }
+  .hide-sm, .brand-tagline { display: none; }
   .stage-layout[data-left="open"], .stage-layout[data-right="open"] {
     --hud-left: 16px;
     --hud-right: 16px;

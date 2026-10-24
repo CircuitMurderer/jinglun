@@ -3,7 +3,7 @@ members = ["crates/world", "crates/server"]
 resolver = "2"
 
 [workspace.package]
-version = "0.10.1-gameplay"
+version = "0.10.2-gameplay"
 edition = "2024"
 license = "UNLICENSED"
 
