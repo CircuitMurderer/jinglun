@@ -474,6 +474,16 @@ export class MapView {
 
   get selectedId(): number | undefined { return this.camera.state.selectedId; }
 
+  clearSelection(): void {
+    this.camera.select(undefined);
+    this.selection.replaceChildren();
+    this.preview(undefined);
+  }
+
+  setInspectionMode(debug: boolean): void {
+    this.element.setAttribute('aria-label', t(debug ? 'map.accessible' : 'entry.mapLabel'));
+  }
+
   destroy(): void {
     this.cancelFlight();
     this.events.abort();

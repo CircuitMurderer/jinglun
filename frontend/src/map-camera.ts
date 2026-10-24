@@ -94,5 +94,5 @@ export class MapCamera {
   }
 
   reset(): void { this.update({ scale: 1, tx: 0, ty: 0 }); }
-  select(selectedId: number): void { this.update({ selectedId }); }
+  select(selectedId: number | undefined): void { this.update({ selectedId }); }
 }

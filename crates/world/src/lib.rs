@@ -20,7 +20,7 @@ pub use environment::Environment;
 pub use seasonal::ClimateProfile;
 pub use water::GroundProfile;
 
-pub const GENERATOR_VERSION: &str = "0.9.0";
+pub const GENERATOR_VERSION: &str = "0.9.0-geo";
 pub const WIDTH: f64 = 1600.0;
 pub const HEIGHT: f64 = 1000.0;
 

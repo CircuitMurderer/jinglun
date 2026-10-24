@@ -1,7 +1,7 @@
 {
   "name": "jinglun",
   "private": true,
-  "version": "0.9.2",
+  "version": "0.10.0-gameplay",
   "type": "module",
   "engines": {
     "node": ">=22.12"

@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ApiError, generateMap } from '../api';
 import { getLocale, number, t } from '../i18n';
 import type { MapView } from '../map';
-import type { Cell, Layer, MapConfig, MapResponse, ResourceKind } from '../types';
+import type { Cell, Layer, MapConfig, ResourceKind } from '../types';
 import { CommandPalette, HelpDialog } from './CommandPalette';
 import { GenesisPanel } from './GenesisPanel';
 import { Icon } from './Icon';
@@ -11,17 +11,24 @@ import { Inspector } from './Inspector';
 import { Comparison } from '../comparison';
 import { LayerDock } from './LayerDock';
 import { MapStage, type Status, type Toggles } from './MapStage';
-import { initialCell, isClimateLayer, layers, loadConfig, saveConfig } from './shared';
-import { ThemePicker, useTheme } from './ThemePicker';
+import { isClimateLayer, layers, loadConfig, saveConfig } from './shared';
+import { useTheme } from './ThemePicker';
+import { GameMenu } from './GameMenu';
+import { version } from '../../../package.json';
+import { worldEntryReducer } from '../world-entry';
+import { WorldEntryPanel } from './WorldEntryPanel';
 
 const compactLayoutQuery = '(max-width: 1180px)';
 
 export function App() {
   useTheme();
+  const [debug, setDebug] = useState(false);
   const [config, setConfig] = useState<MapConfig>(() => loadConfig(t('settings.defaultSeed')));
-  const [result, setResult] = useState<MapResponse>();
+  const [entry, dispatchEntry] = useReducer(worldEntryReducer, { stage: 'setup' });
+  const result = entry.result;
+  const inGame = entry.stage === 'round';
   const [generationSerial, setGenerationSerial] = useState(0);
-  const [status, setStatus] = useState<Status>('loading');
+  const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState<string>();
   const [layer, setLayer] = useState<Layer>('terrain');
   const [resource, setResource] = useState<ResourceKind>('iron');
@@ -31,7 +38,7 @@ export function App() {
   const [selected, setSelected] = useState<Cell>();
   const [compact, setCompact] = useState(() => matchMedia(compactLayoutQuery).matches);
   const [leftOpen, setLeftOpen] = useState(() => !matchMedia(compactLayoutQuery).matches);
-  const [rightOpen, setRightOpen] = useState(() => !matchMedia(compactLayoutQuery).matches);
+  const [rightOpen, setRightOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [exported, setExported] = useState(false);
@@ -39,12 +46,11 @@ export function App() {
   const busy = useRef(false);
 
   useEffect(() => {
-    document.title = t('app.title');
     document.documentElement.lang = getLocale();
   }, []);
 
   const runGenerate = useCallback(async (nextConfig: MapConfig) => {
-    if (busy.current) return;
+    if (busy.current || entry.stage !== 'setup') return;
     busy.current = true;
     setStatus('loading');
     setError(undefined);
@@ -52,10 +58,13 @@ export function App() {
     try {
       const response = await generateMap(normalized);
       saveConfig(normalized);
-      setResult(response);
+      setConfig(normalized);
+      dispatchEntry({ type: 'generated', result: response });
+      setLeftOpen(true);
+      if (matchMedia(compactLayoutQuery).matches) setRightOpen(false);
       setGenerationSerial(serial => serial + 1);
-      // Update both in the same render, including when the new world has fewer cells.
-      setSelected(initialCell(response.map.cells));
+      // Clear the old selection; MapStage selects a candidate only in debug mode.
+      setSelected(undefined);
       setStatus('ready');
     } catch (err) {
       const failure = err instanceof ApiError ? err : new ApiError('error.generation');
@@ -64,10 +73,7 @@ export function App() {
     } finally {
       busy.current = false;
     }
-  }, []);
-
-  const initialConfig = useRef(config);
-  useEffect(() => { void runGenerate(initialConfig.current); }, [runGenerate]);
+  }, [entry.stage]);
 
   // Seasonal playback timer
   useEffect(() => {
@@ -96,19 +102,30 @@ export function App() {
   }, [compact]);
 
   const toggleRight = useCallback(() => {
+    if (!debug && (!inGame || !selected)) return;
     setRightOpen((value) => !value);
     if (compact) setLeftOpen(false);
-  }, [compact]);
+  }, [compact, debug, inGame, selected]);
+
+  const handleMapSelect = useCallback((cell: Cell) => {
+    if (!debug && !inGame) return;
+    setSelected(cell);
+    if (inGame) {
+      setRightOpen(true);
+      if (compact) setLeftOpen(false);
+    }
+  }, [debug, inGame, compact]);
 
   const handleToggle = useCallback((key: keyof Toggles) => {
     setToggles((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
   const handleFocus = useCallback((id: number, zoom = true) => {
+    if (!debug) return;
     viewRef.current?.focus(id, zoom);
     setRightOpen(true);
     if (compact) setLeftOpen(false);
-  }, [compact]);
+  }, [compact, debug]);
 
   const handlePreview = useCallback((id?: number) => {
     viewRef.current?.preview(id);
@@ -139,10 +156,25 @@ export function App() {
     setTimeout(() => setExported(false), 2200);
   }, [result]);
 
+  const changeDebug = (enabled: boolean) => {
+    setDebug(enabled);
+    setPlaying(false);
+    setMonth(undefined);
+    setLayer('terrain');
+    setPaletteOpen(false);
+    setHelpOpen(false);
+    setExported(false);
+    if (!inGame) {
+      setSelected(undefined);
+      setRightOpen(enabled && !compact);
+    }
+    viewRef.current?.preview(undefined);
+  };
+
   // Global keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+      if (debug && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setPaletteOpen((v) => !v);
         return;
@@ -157,12 +189,13 @@ export function App() {
       }
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const key = event.key;
-      if (key >= '1' && key <= '9') {
+      if (debug && key >= '1' && key <= '9') {
         event.preventDefault();
         const next = layers[Number(key) - 1].id;
         setLayer(next);
         return;
       }
+      if (!debug && !['+', '=', '-', '_', 'home', '[', ']'].includes(key.toLowerCase())) return;
       switch (key.toLowerCase()) {
         case 'r': event.preventDefault(); handleToggle('water'); break;
         case 'b': event.preventDefault(); handleToggle('borders'); break;
@@ -219,12 +252,44 @@ export function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [paletteOpen, helpOpen, layer, handleToggle, toggleLeft, toggleRight]);
+  }, [debug, paletteOpen, helpOpen, layer, handleToggle, toggleLeft, toggleRight]);
 
   const world = result?.map;
+  const leftLabel = entry.stage === 'setup' ? t('panel.settings')
+    : entry.stage === 'confirm' ? t('entry.confirmPanel') : t('round.panel');
+  const date = entry.stage === 'round'
+    ? t('round.date', { year: number(entry.round.year), month: number(entry.round.month) }) : undefined;
+
+  useEffect(() => {
+    document.title = date ? t('round.windowTitle', { date }) : t('app.title');
+  }, [date]);
+
+  const configureWorld = () => {
+    if (entry.stage !== 'confirm') return;
+    dispatchEntry({ type: 'configure' });
+    setStatus('idle');
+    setError(undefined);
+    setPlaying(false);
+  };
+
+  const confirmWorld = () => {
+    if (entry.stage !== 'confirm' || busy.current) return;
+    dispatchEntry({ type: 'confirm' });
+    setPlaying(false);
+    setMonth(undefined);
+    setLayer('terrain');
+    viewRef.current?.clearSelection();
+    setSelected(undefined);
+    setRightOpen(false);
+  };
+
+  const nextRound = () => {
+    setPlaying(false);
+    dispatchEntry({ type: 'next-round' });
+  };
 
   return (
-    <div className="atlas-shell">
+    <div className="atlas-shell" data-mode={debug ? 'debug' : 'gameplay'} data-stage={entry.stage}>
       <header className="topbar glass">
         <div className="brand-group">
           <a className="brand" href="/" aria-label={t('app.name')}>
@@ -235,17 +300,17 @@ export function App() {
           <span className="divider" aria-hidden="true" />
           <span className="phase-badge">
             <span className={`status-dot ${status}`} />
-            <span>{t('app.phase')}</span>
-            <em>{t('app.version')}</em>
+            <span>{debug ? t('menu.debug') : date ? t('round.eyebrow') : t('app.phase')}</span>
+            <em>{version}</em>
           </span>
         </div>
 
-        <div className="telemetry" aria-live="polite">
+        <div className={`telemetry${date && !debug ? ' has-round' : ''}`} aria-live="polite">
           <span className="telemetry-item">
             <span className={`status-dot ${status}`} />
-            {status === 'ready' ? t('map.ready') : status === 'loading' ? t('map.loading') : t('error.title')}
+            {date ?? (status === 'idle' ? t('entry.configure') : status === 'ready' ? t('map.ready') : status === 'loading' ? t('map.loading') : t('error.title'))}
           </span>
-          {result && (
+          {debug && result && (
             <>
               <span className="sep">·</span>
               <span className="telemetry-item">{t('map.cellCount', { value: number(result.map.cells.length) })}</span>
@@ -260,39 +325,45 @@ export function App() {
         </div>
 
         <div className="topbar-actions">
-          <ThemePicker />
-          <button type="button" className="search-trigger" onClick={() => setPaletteOpen(true)} aria-label={t('palette.open')}>
-            <Icon name="search" size={15} />
-            <span>{selected ? `${t('inspector.cell', { value: number(selected.id + 1) })} · ${t(`terrain.${selected.terrain}`)}` : t('palette.open')}</span>
-            <kbd>⌘K</kbd>
-          </button>
+          {debug && <>
+            <button type="button" className="search-trigger" onClick={() => setPaletteOpen(true)} aria-label={t('palette.open')}>
+              <Icon name="search" size={15} />
+              <span>{selected ? `${t('inspector.cell', { value: number(selected.id + 1) })} · ${t(`terrain.${selected.terrain}`)}` : t('palette.open')}</span>
+              <kbd>⌘K</kbd>
+            </button>
 
-          <button type="button" className="icon-btn" onClick={() => setHelpOpen(true)} aria-label={t('shortcuts.open')} data-tip={`${t('shortcuts.open')} · ?`}>
-            <Icon name="keyboard" size={17} />
-          </button>
+            <button type="button" className="icon-btn" onClick={() => setHelpOpen(true)} aria-label={t('shortcuts.open')} data-tip={`${t('shortcuts.open')} · ?`}>
+              <Icon name="keyboard" size={17} />
+            </button>
 
-          <button id="export" type="button" className="export-btn" disabled={!result} onClick={handleExport}>
-            <Icon name="download" size={16} />
-            <span>{exported ? t('map.exported') : t('map.export')}</span>
-          </button>
+            <button id="export" type="button" className="export-btn" disabled={!result} onClick={handleExport}>
+              <Icon name="download" size={16} />
+              <span>{exported ? t('map.exported') : t('map.export')}</span>
+            </button>
+          </>}
+          <GameMenu debug={debug} version={version} onDebug={changeDebug} />
         </div>
       </header>
 
-      <main className="stage-layout" data-left={leftOpen ? 'open' : 'closed'} data-right={rightOpen ? 'open' : 'closed'}>
+      <main className="stage-layout" data-left={leftOpen ? 'open' : 'closed'} data-right={(debug || inGame && selected) && rightOpen ? 'open' : 'closed'}>
         <MapStage
           world={world}
-          layer={layer}
+          debug={debug}
+          inGame={inGame}
+          showLegend={!!world && (!inGame || !!selected)}
+          onNextRound={inGame ? nextRound : undefined}
+          layer={debug ? layer : 'terrain'}
           resource={resource}
-          month={month}
-          toggles={toggles}
+          month={debug ? month : undefined}
+          toggles={debug ? toggles : { water: false, borders: true, centers: false, graticule: false }}
           status={status}
           error={error}
           onRetry={() => void runGenerate(config)}
-          onSelect={setSelected}
+          onSelect={handleMapSelect}
           onToggle={handleToggle}
           viewRef={viewRef}
         >
-          <LayerDock
+          {debug && <LayerDock
             layer={layer}
             resource={resource}
             month={month}
@@ -301,40 +372,43 @@ export function App() {
             onResource={(next) => setResource(next)}
             onMonth={(next) => { setPlaying(false); setMonth(next); }}
             onPlay={() => setPlaying((v) => !v)}
-          />
+          />}
         </MapStage>
 
-        {/* Left Drawer: World Genesis + Macro Stats */}
-        <aside className={`side-drawer left glass${leftOpen ? ' open' : ' collapsed'}`} aria-label={t('panel.settings')}>
+        {/* World setup, map confirmation, then the first round. */}
+        <aside className={`side-drawer left glass${leftOpen ? ' open' : ' collapsed'}`} aria-label={leftLabel}>
           <button
             type="button"
             className="drawer-tab"
             onClick={toggleLeft}
             aria-expanded={leftOpen}
             aria-label={t(leftOpen ? 'panel.collapse' : 'panel.expand')}
-            data-tip={`${t('panel.settings')} · [`}
+            data-tip={`${leftLabel} · [`}
           >
             <Icon name={leftOpen ? 'chevronLeft' : 'chevron'} size={15} />
-            {!leftOpen && <span className="tab-vertical">{t('panel.settings')}</span>}
+            {!leftOpen && <span className="tab-vertical">{leftLabel}</span>}
           </button>
-          <div className="drawer-body">
-            <div className="hero-banner">
-              <p className="eyebrow">{t('world.eyebrow')}</p>
-              <h1>{t('world.title')}</h1>
-              <p className="sub">{t('world.description')}</p>
-            </div>
-            <GenesisPanel
-              config={config}
-              onChange={setConfig}
-              onGenerate={() => void runGenerate(config)}
-              pending={status === 'loading'}
-              world={world}
-            />
+          <div className="drawer-body" inert={!leftOpen}>
+            {entry.stage === 'setup' ? <>
+              <div className="hero-banner">
+                <p className="eyebrow">{t(debug ? 'world.eyebrow' : 'entry.eyebrow')}</p>
+                <h1>{t(debug ? 'world.title' : 'entry.title')}</h1>
+                <p className="sub">{t(debug ? 'world.description' : 'entry.description')}</p>
+              </div>
+              <GenesisPanel
+                config={config}
+                onChange={setConfig}
+                onGenerate={() => void runGenerate(config)}
+                pending={status === 'loading'}
+                debug={debug}
+                world={world}
+              />
+            </> : <WorldEntryPanel entry={entry} onConfigure={configureWorld} onConfirm={confirmWorld} />}
           </div>
         </aside>
 
         {/* Right Drawer: Cell Inspector */}
-        <aside className={`side-drawer right glass${rightOpen ? ' open' : ' collapsed'}`} aria-label={t('panel.inspector')}>
+        {(debug || inGame && selected) && <aside className={`side-drawer right glass${rightOpen ? ' open' : ' collapsed'}`} aria-label={t('panel.inspector')}>
           <button
             type="button"
             className="drawer-tab"
@@ -346,13 +420,13 @@ export function App() {
             <Icon name={rightOpen ? 'chevron' : 'chevronLeft'} size={15} />
             {!rightOpen && <span className="tab-vertical">{t('panel.inspector')}</span>}
           </button>
-          <div className="drawer-body">
+          <div className="drawer-body" inert={!rightOpen}>
             <div className="inspector-topbar">
               <div className="section-head">
                 <span className="section-index">03</span>
                 <h2>{t('inspector.title')}</h2>
               </div>
-              <div className="cell-select-wrap">
+              {debug && <div className="cell-select-wrap">
                 <select
                   id="cell-select"
                   aria-label={t('inspector.choose')}
@@ -366,9 +440,9 @@ export function App() {
                     </option>
                   ))}
                 </select>
-              </div>
+              </div>}
             </div>
-            <Inspector
+            {debug ? <Inspector
               comparison={<Comparison key={generationSerial} world={world} selectedId={selected?.id} month={month}
                 onPeriod={next => { setPlaying(false); setMonth(next); }} onInspect={id => handleFocus(id, false)} />}
               world={world}
@@ -380,21 +454,23 @@ export function App() {
               onPreview={handlePreview}
               onMonth={handlePickMonth}
               onResource={handlePickResource}
-            />
+            /> : <div className="fogged-cell" aria-live="polite">
+              <h3>{selected && t('inspector.cell', { value: number(selected.id + 1) })}</h3>
+            </div>}
           </div>
-        </aside>
+        </aside>}
       </main>
 
-      <CommandPalette
+      {debug && <CommandPalette
         open={paletteOpen}
         world={world}
         onClose={() => setPaletteOpen(false)}
         onCell={(id) => handleFocus(id, true)}
         onLayer={(next) => { setPlaying(false); setLayer(next); }}
         onPreview={handlePreview}
-      />
+      />}
 
-      <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+      {debug && <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />}
 
       <AnimatePresence>
         {exported && (

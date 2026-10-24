@@ -10,6 +10,7 @@ interface Props {
   onChange: (config: MapConfig) => void;
   onGenerate: () => void;
   pending: boolean;
+  debug: boolean;
   world?: WorldMap;
 }
 
@@ -23,7 +24,7 @@ const statDefs: Array<{ key: 'landmasses' | 'coast' | 'highlands' | 'rivers' | '
 
 const fill = (value: number, min: number, max: number) => ({ '--p': `${((value - min) / (max - min)) * 100}%` }) as CSSProperties;
 
-export function GenesisPanel({ config, onChange, onGenerate, pending, world }: Props) {
+export function GenesisPanel({ config, onChange, onGenerate, pending, world, debug }: Props) {
   const [spin, setSpin] = useState(0);
   const stats = world?.stats;
   const landRing = 2 * Math.PI * 30;
@@ -35,9 +36,9 @@ export function GenesisPanel({ config, onChange, onGenerate, pending, world }: P
         <form id="generation-form" className="genesis-form" onSubmit={(event) => { event.preventDefault(); if (event.currentTarget.reportValidity()) onGenerate(); }}>
           <label htmlFor="seed" className="field-label">{t('settings.seed')}</label>
           <div className="seed-field">
-            <input id="seed" name="seed" value={config.seed} maxLength={64} required placeholder={t('settings.seedPlaceholder')}
+            <input id="seed" name="seed" value={config.seed} maxLength={64} required disabled={pending} autoFocus placeholder={t('settings.seedPlaceholder')}
               onChange={(event) => onChange({ ...config, seed: event.target.value })} autoComplete="off" spellCheck={false} />
-            <motion.button type="button" className="dice" title={t('settings.random')} aria-label={t('settings.random')}
+            <motion.button type="button" className="dice" disabled={pending} title={t('settings.random')} aria-label={t('settings.random')}
               animate={{ rotate: spin * 360 }} transition={{ type: 'spring', stiffness: 160, damping: 14 }}
               onClick={() => { setSpin((v) => v + 1); onChange({ ...config, seed: String(crypto.getRandomValues(new Uint32Array(1))[0]) }); }}>
               <Icon name="shuffle" size={17} />
@@ -45,14 +46,14 @@ export function GenesisPanel({ config, onChange, onGenerate, pending, world }: P
           </div>
 
           <div className="field-row"><label htmlFor="cell-count" className="field-label">{t('settings.count')}</label><output htmlFor="cell-count">{t('settings.countValue', { value: number(config.cell_count) })}</output></div>
-          <input id="cell-count" className="slider" type="range" min={100} max={2000} step={50} value={config.cell_count} style={fill(config.cell_count, 100, 2000)}
+          <input id="cell-count" className="slider" type="range" disabled={pending} min={100} max={2000} step={50} value={config.cell_count} style={fill(config.cell_count, 100, 2000)}
             onChange={(event) => onChange({ ...config, cell_count: Number(event.target.value) })} />
           <div className="range-ends"><span>100</span><span>2,000</span></div>
 
           <span className="field-label" id="relax-label">{t('settings.relaxations')}</span>
           <div className="segmented" role="radiogroup" aria-labelledby="relax-label">
             {[0, 1, 2, 3].map((value) => (
-              <button key={value} type="button" role="radio" aria-checked={config.relaxations === value}
+              <button key={value} type="button" role="radio" disabled={pending} aria-checked={config.relaxations === value}
                 className={config.relaxations === value ? 'active' : ''} onClick={() => onChange({ ...config, relaxations: value })}
                 title={t(`settings.relaxation.${value}` as MessageKey)}>
                 {config.relaxations === value && <motion.span layoutId="relax-pill" className="pill" transition={{ type: 'spring', stiffness: 500, damping: 36 }} />}
@@ -63,20 +64,20 @@ export function GenesisPanel({ config, onChange, onGenerate, pending, world }: P
           <p className="field-hint">{t(`settings.relaxation.${config.relaxations}` as MessageKey)}</p>
 
           <div className="field-row"><label htmlFor="land-ratio" className="field-label">{t('settings.land')}</label><output htmlFor="land-ratio">{percent(config.land_ratio)}</output></div>
-          <input id="land-ratio" className="slider land" type="range" min={20} max={80} value={Math.round(config.land_ratio * 100)} style={fill(config.land_ratio * 100, 20, 80)}
+          <input id="land-ratio" className="slider land" type="range" disabled={pending} min={20} max={80} value={Math.round(config.land_ratio * 100)} style={fill(config.land_ratio * 100, 20, 80)}
             onChange={(event) => onChange({ ...config, land_ratio: Number(event.target.value) / 100 })} />
           <div className="land-sea"><span style={{ width: `${config.land_ratio * 100}%` }} /></div>
-          <p className="field-hint">{t('settings.landSea', { land: percent(config.land_ratio), sea: percent(1 - config.land_ratio) })} · {t('settings.landHint')}</p>
+          <p className="field-hint">{t('settings.landSea', { land: percent(config.land_ratio), sea: percent(1 - config.land_ratio) })} · {t(debug ? 'settings.landHint' : 'entry.landHint')}</p>
 
           <button id="generate" className="generate-button" type="submit" disabled={pending}>
             <span className="shine" aria-hidden="true" />
             {pending ? <><span>{t('settings.generating')}</span><span className="spinner" /></> : <><Icon name="sparkle" size={17} /><span>{t('settings.generate')}</span><Icon name="arrow" size={17} /></>}
           </button>
-          <p className="settings-note">{t('settings.note')}</p>
+          <p className="settings-note">{t(debug ? 'settings.note' : 'entry.settingsNote')}</p>
         </form>
       </section>
 
-      <section className="panel-section" aria-live="polite">
+      {debug && <section className="panel-section" aria-live="polite">
         <header className="section-head"><span className="section-index">02</span><h2>{t('stats.title')}</h2></header>
         <div className="land-stat">
           <svg viewBox="0 0 72 72" width="72" height="72" aria-hidden="true">
@@ -99,7 +100,7 @@ export function GenesisPanel({ config, onChange, onGenerate, pending, world }: P
             </article>
           ))}
         </div>
-      </section>
+      </section>}
     </div>
   );
 }
