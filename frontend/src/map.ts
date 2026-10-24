@@ -195,6 +195,12 @@ export class MapView {
       const transform = `translate(${view.tx} ${view.ty}) scale(${view.scale})`;
       this.scene.setAttribute('transform', transform);
       this.foregroundScene.setAttribute('transform', transform);
+      // Feather the world rectangle with the same projection as SVG and rivers.
+      const screen = screenTransform(view);
+      this.surface.style.setProperty('--world-left', `${screen.x}px`);
+      this.surface.style.setProperty('--world-top', `${screen.y}px`);
+      this.surface.style.setProperty('--world-right', `${screen.x + view.width * screen.scale}px`);
+      this.surface.style.setProperty('--world-bottom', `${screen.y + view.height * screen.scale}px`);
       this.overlay.setView(view);
       this.placeLabels();
       this.onZoom(view.scale);

@@ -350,7 +350,7 @@ export function App() {
           world={world}
           debug={debug}
           inGame={inGame}
-          showLegend={!!world && (!inGame || !!selected)}
+          showLegend={!!world && (!inGame || !!selected && rightOpen)}
           onNextRound={inGame ? nextRound : undefined}
           layer={debug ? layer : 'terrain'}
           resource={resource}

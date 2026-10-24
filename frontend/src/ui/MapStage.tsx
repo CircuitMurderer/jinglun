@@ -190,6 +190,29 @@ function Legend({ world, layer, resource, month }: { world?: WorldMap; layer: La
 }
 
 /* ---------- Loading / error overlay ---------- */
+function Starfield() {
+  const nebula = useId();
+  return <svg className="starfield" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <defs>
+      <radialGradient id={nebula}>
+        <stop stopColor="var(--accent-cyan)" stopOpacity="0.18" />
+        <stop offset="0.5" stopColor="var(--accent-jade)" stopOpacity="0.06" />
+        <stop offset="1" stopColor="var(--accent-cyan)" stopOpacity="0" />
+      </radialGradient>
+    </defs>
+    <ellipse cx="880" cy="410" rx="800" ry="270" transform="rotate(-28 880 410)" fill={`url(#${nebula})`} />
+    {Array.from({ length: 240 }, (_, i) => {
+      const x = (i * 137.508 + 31) % 1440;
+      const y = (i * 271.947 + i * i * 11.31 + 53) % 900;
+      const bright = i % 29 === 0;
+      return <g key={i} opacity={0.25 + i % 7 * 0.1}>
+        <circle cx={x} cy={y} r={bright ? 1.8 : 0.5 + i % 4 * 0.25} fill={i % 5 ? 'var(--text-primary)' : 'var(--accent-gold)'} />
+        {bright && <path d={`M${x - 5},${y}h10 M${x},${y - 5}v10`} stroke="var(--accent-cyan)" strokeWidth="0.6" />}
+      </g>;
+    })}
+  </svg>;
+}
+
 function Astrolabe() {
   const gradient = useId();
   return (
@@ -320,8 +343,9 @@ export function MapStage({ world, debug, inGame, showLegend, onNextRound, layer,
   useEffect(() => { if (status === 'ready') setEverReady(true); }, [status]);
 
   return (
-    <section className="map-stage" data-layer={layer} data-in-game={inGame}>
+    <section className="map-stage" data-layer={layer} data-in-game={inGame} data-has-world={!!world}>
       <div className="map-host" ref={host} />
+      {!world && <Starfield />}
       {!world && <div className="preworld" role="img" aria-label={t('entry.orbitLogo')}>
         <div className="orbital-mark"><Astrolabe /><span className="orbital-core">{t('app.name')}</span></div>
         <p>{t('entry.orbitDestination')}</p>

@@ -332,6 +332,18 @@ button:disabled {
     repeating-linear-gradient(90deg, rgb(var(--grid-rgb) / 0.025) 0 1px, transparent 1px 32px);
 }
 
+.map-stage[data-has-world="true"] {
+  background: radial-gradient(ellipse at center, var(--map-deep-ocean), var(--bg-deep));
+}
+
+.map-surface {
+  --edge-feather: 24px;
+  mask-image:
+    linear-gradient(to right, transparent var(--world-left), black calc(var(--world-left) + var(--edge-feather)), black calc(var(--world-right) - var(--edge-feather)), transparent var(--world-right)),
+    linear-gradient(to bottom, transparent var(--world-top), black calc(var(--world-top) + var(--edge-feather)), black calc(var(--world-bottom) - var(--edge-feather)), transparent var(--world-bottom));
+  mask-composite: intersect;
+}
+
 .map-host, .map-surface {
   position: absolute;
   inset: 0;
@@ -549,16 +561,16 @@ button:disabled {
 
 .hud-top-left {
   top: 14px;
-  left: var(--hud-left);
+  left: calc(var(--hud-left) + 32px);
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-width: 340px;
+  max-width: min(340px, calc(100% - var(--hud-left) - var(--hud-right) - 140px));
 }
 
 .hud-top-right {
   top: 14px;
-  right: var(--hud-right);
+  right: calc(var(--hud-right) + 32px);
   display: flex;
   align-items: flex-start;
   gap: 10px;
@@ -2242,13 +2254,17 @@ button:disabled {
 .next-round-button:hover::after, .next-round-button:focus-visible::after { opacity: 1; transform: translateX(50%) translateY(0); }
 .map-stage[data-in-game="true"] .hud-bottom { right: calc(var(--hud-right) + 88px); }
 .preworld { position: absolute; inset: 0 var(--hud-right) 0 var(--hud-left); z-index: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 24px; pointer-events: none; background: radial-gradient(ellipse at center, rgb(var(--cyan-rgb) / 0.13), transparent 65%); }
-.preworld::before { content: ''; position: absolute; inset: 8%; opacity: 0.55; background: radial-gradient(circle at 17% 25%, var(--accent-gold) 0 1px, transparent 2px), radial-gradient(circle at 83% 18%, var(--accent-jade) 0 1px, transparent 2px), radial-gradient(circle at 76% 77%, var(--accent-cyan) 0 1px, transparent 2px), radial-gradient(circle at 22% 82%, var(--text-primary) 0 1px, transparent 2px); }
+.starfield { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .orbital-mark { position: relative; width: min(62vw, 430px); aspect-ratio: 1; }
 .preworld .astrolabe { width: 100%; height: 100%; margin: 0; filter: drop-shadow(0 0 22px rgb(var(--jade-rgb) / 0.18)); }
 .orbital-core { position: absolute; inset: 0; display: grid; place-items: center; font: clamp(28px, 4vw, 48px) var(--font-serif); letter-spacing: 0.12em; color: var(--text-primary); text-shadow: 0 0 24px rgb(var(--jade-rgb) / 0.65); }
 .preworld p { margin: 0; color: var(--text-secondary); font: 11px var(--font-mono); letter-spacing: 0.16em; text-align: center; }
 
 /* ==================== Responsive & Reduced Motion ==================== */
+@media (min-width: 1181px) and (max-width: 1520px) {
+  .stage-layout[data-left="open"][data-right="open"] .minimap { display: none; }
+}
+
 @media (max-width: 1180px) {
   .hide-sm, .brand-tagline, .instructions { display: none; }
   .stage-layout[data-left="open"], .stage-layout[data-right="open"] {
@@ -2258,7 +2274,10 @@ button:disabled {
   /* Compact drawers overlay the map, leaving the dock available below them. */
   .side-drawer { bottom: 144px; }
   .atlas-shell[data-mode="gameplay"] .side-drawer.right { bottom: auto; }
+  .atlas-shell[data-mode="gameplay"] .side-drawer.right.open .drawer-tab { top: 8px; right: 10px; margin-right: 0; border-radius: 8px; }
   .atlas-shell[data-mode="gameplay"] .stage-layout[data-right="open"] .hud-top-left { top: 180px; }
+  .atlas-shell[data-mode="gameplay"] .stage-layout[data-right="open"] .hud-top-right { top: 180px; }
+  .atlas-shell[data-mode="debug"] .stage-layout[data-right="open"] .hud-top-right { visibility: hidden; }
 }
 
 @media (max-width: 820px) {
@@ -2272,7 +2291,6 @@ button:disabled {
   .phase-badge, .topbar .divider, .search-trigger span, .search-trigger kbd { display: none; }
   .search-trigger { width: 34px; height: 34px; padding: 0; justify-content: center; }
   .minimap { display: none; }
-  .hud-top-left { max-width: calc(100vw - 100px); }
   .layer-dock { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); width: 100%; }
   .layer-button { justify-content: center; padding: 7px 6px; }
   .layer-button .label { display: none; }
